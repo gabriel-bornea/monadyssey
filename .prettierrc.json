@@ -1,0 +1,6 @@
+{
+  "proseWrap": "never",
+  "quoteProps": "consistent",
+  "trailingComma": "es5",
+  "printWidth": 120
+}
