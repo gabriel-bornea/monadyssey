@@ -1,10 +1,28 @@
+import { IO } from "./io.ts";
+
 /**
  * Represents a scheduling policy with configurable retries, delay factor, initial delay, and optional timeout.
  */
 export interface Policy {
+  /**
+   * The maximum number of retry attempts. Must be a positive integer.
+   */
   recurs: number;
+
+  /**
+   * The factor by which the delay increases after each retry. Must be greater than or equal to 1.
+   */
   factor: number;
+
+  /**
+   * The initial delay in milliseconds before the first retry. Must be non-negative.
+   */
   delay: number;
+
+  /**
+   * Optional. The maximum duration in milliseconds that each attempt can take before timing out.
+   * If not set, attempts will not time out.
+   */
   timeout?: number;
 }
 
@@ -31,7 +49,7 @@ export const defaultPolicy = (
  *
  * @template A - The type of the result returned by the asynchronous operations.
  */
-export class Schedule<A> {
+export class Schedule {
   private readonly policy: Policy;
 
   /**
@@ -56,100 +74,185 @@ export class Schedule<A> {
   }
 
   /**
-   * Tries to execute a function as long as a condition is true, retrying up to a maximum number of times defined in the policy.
-   * Note: If the condition is mutable, changes to its state after this function starts executing will influence the retry logic.
+   * Wraps an IO operation with retry logic based on a defined policy and a specific condition.
+   * The operation is retried with an increasing delay, which grows according to the policy factor.
+   * If an operation exceeds the retry limit or fails due to other reasons, a RetryError is thrown.
+   * Other errors (including TimeoutError, if configured) are propagated immediately.
    *
-   * @param {() => Promise<A>} f - The asynchronous function to attempt.
-   * @param {() => boolean} condition - A function that returns true if retry should continue or false to stop.
-   * @returns {Promise<A>} The result of the function `f` if successful.
+   * @template E The error type inside the IO.
+   * @template A The potential result of the IO operation.
+   *
+   * @param {() => IO<E, A>} f The operation to retry.
+   * @param {() => boolean} condition The condition under which to retry the operation.
+   * @param {(error: Error) => E} liftE A function that transforms a generic Error into an instance of E.
+   *
+   * @returns {IO<E, A>} An IO instance that encapsulates the original operation's result if successful,
+   *                      or encapsulates a RetryError if the retry limit is reached without success.
+   *
+   * @example
+   * const operation = () => new IO(() => performOperationThatMayFail());
+   * const retryCondition = () => hasResourcesForRetry();
+   * const errorLifter = (error: Error) => new CustomError(error.message);
+   *
+   * const retryIO = retryIf(operation, retryCondition, errorLifter);
+   *
+   * retryIO.runAsync().then(result => {
+   *   if (IO.isOk(result)) {
+   *     // success handling
+   *   } else {
+   *     // error handling, includes RetryError and other potential failures
+   *   }
+   * });
    */
-  retryIf = async (f: () => Promise<A>, condition: () => boolean): Promise<A> => {
+  retryIf = <E, A>(f: () => IO<E, A>, condition: () => boolean, liftE: (error: Error) => E): IO<E, A> => {
     const policy = this.policy;
-    const retry = async (
-      wrappedF: () => Promise<A>,
-      condition: () => boolean,
-      counter: number = 0,
-      delay: number = policy.delay
-    ): Promise<A> => {
-      if (!condition() || counter >= policy.recurs) {
-        return Promise.reject(new RetryLimitReachedError("Retry ended without fulfilling the condition"));
-      }
-      try {
-        return await wrappedF();
-      } catch (error) {
-        if (error instanceof TimeoutError) {
-          return Promise.reject(error);
+    return IO.of<E, A>(async () => {
+      let attempt = 0;
+      let delay = policy.delay;
+
+      while (condition() && attempt < policy.recurs) {
+        const result = await this.withTimeout(f, liftE).runAsync();
+
+        if (IO.isOk(result)) {
+          return result.value;
         }
-        const nextDelay = delay * policy.factor;
+
+        if (attempt >= policy.recurs - 1 || !condition()) {
+          throw result.error;
+        }
+
         await new Promise((resolve) => setTimeout(resolve, delay));
-        return retry(this.withPolicyTimeout(wrappedF, counter + 1), condition, counter + 1, nextDelay);
+        delay *= policy.factor;
+        attempt++;
       }
-    };
-    return retry(this.withPolicyTimeout(f, 1), condition, 0, policy.delay);
+
+      throw new RetryError("Retry limit reached without success");
+    });
   };
 
   /**
-   * Repeats the execution of the action, and if it succeeds, keeps executing it again based on the scheduling policy
-   * defined. It stops if the action fails or the policy determines it should not be executed again.
-   * It returns the last internal state of the scheduling policy or the error that happened running the action.
+   * Repeats the execution of an IO action based on a defined scheduling policy.
+   * If the IO action succeeds, it is executed again until it either fails or the policy determines the execution should stop.
    *
-   * @param {() => Promise<A>} f - The asynchronous function to attempt.
-   * @return {Promise<A>} The result of the function `f`.
+   * The function returns the result of the last successful execution or throws a RepeatError.
+   *
+   * @template E The error type inside the IO.
+   * @template A The potential result of the IO action.
+   *
+   * @param {() => IO<E, A>} f The IO action to repeat.
+   * @param {(error: Error) => E} liftE A function that transforms a generic Error into an instance of E.
+   *
+   * @returns {IO<E, A>} An IO instance that encapsulates the last successful result
+   *                      or a RepeatError if the action fails or exhausts the retries determined by the policy.
+   *
+   * @example
+   * const operation = () => new IO(() => performOperationThatMaySucceedOrFail());
+   * const errorLifter = (error: Error) => new CustomError(error.message);
+   *
+   * const repeatIO = repeat(operation, errorLifter);
+   *
+   * repeatIO.runAsync().then(result => {
+   *   if (result.type === 'Ok') {
+   *     // success handling with last successful result
+   *   } else {
+   *     // error handling, may involve RepeatError or other failures occurred during execution
+   *   }
+   * });
    */
-  async repeat(f: () => Promise<A>): Promise<Error | A> {
-    let lastResult: A | undefined = undefined;
-    let attempt = 0;
+  repeat<E, A>(f: () => IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
+    const policy = this.policy;
 
-    while (attempt < this.policy.recurs) {
-      const wrappedF = this.withPolicyTimeout(f, attempt + 1);
+    return IO.of(async () => {
+      let lastSuccessResult: A | null = null;
 
-      try {
-        lastResult = await wrappedF();
-        attempt++;
-        if (attempt < this.policy.recurs) {
-          await new Promise((resolve) => setTimeout(resolve, this.policy.delay));
-        }
-      } catch (error) {
-        if (error instanceof Error) {
-          return new RepeatError(error.message);
+      for (let attempt = 0; attempt < policy.recurs; attempt++) {
+        const result = await this.withTimeout(f, liftE).runAsync();
+
+        if (IO.isOk(result)) {
+          lastSuccessResult = result.value;
+
+          // if this is not the last attempt then delay
+          if (attempt < policy.recurs - 1) {
+            await new Promise((resolve) => setTimeout(resolve, policy.delay));
+          }
         } else {
-          return new RepeatError("Failed to execute repeat");
+          throw new RepeatError(`Failed to execute repeat: ${result.error}`);
         }
       }
-    }
 
-    if (lastResult === undefined) {
-      return new RepeatError("The function provided never succeeded");
-    }
-    return lastResult;
+      if (lastSuccessResult !== null) {
+        return lastSuccessResult;
+      }
+
+      throw new RepeatError("The function provided never succeeded");
+    });
   }
 
   /**
-   * Wraps an asynchronous function with an optional timeout.
+   * Wraps an IO operation with an optional timeout configured by the scheduler policy.
+   * If a valid timeout is provided and the operation exceeds this time,
+   * it encapsulates a TimeoutError within the IO instance.
+   * Otherwise, it proceeds as normal.
    *
-   * If a valid timeout is provided (greater than 0), the function will reject if not completed within that time frame.
-   * Otherwise, the function will execute normally without a timeout.
+   * @template E The error type inside the IO.
+   * @template A The potential result of the IO operation.
    *
-   * @param {() => Promise<A>} f - The asynchronous function to wrap.
-   * @param attempt - The current attempt
-   * @returns {Promise<A>} A promise that resolves with the function's result or rejects if the timeout is exceeded.
+   * @param {() => IO<E, A>} f The operation to wrap with the policy timeout.
+   * @param {(error: Error) => E} liftE A function that transforms a generic Error into an instance of E.
+   *
+   * @returns {IO<E, A>} An IO instance that either encapsulates the original operation's result
+   *                      or a TimeoutError if the timeout is exceeded.
+   *
+   * @example
+   * const operation = () => new IO(() => performSomeOperation());
+   * const timeoutErrorLifter = (error: Error) => new CustomError(error.message);
+   *
+   * const ioWithTimeout = withTimeout(operation, timeoutErrorLifter);
+   *
+   * ioWithTimeout.runAsync()
+   *   .then(result => {
+   *     if (IO.isOk(result)) {
+   *       // success handling
+   *     } else {
+   *       // error handling, includes TimeoutError and other potential errors.
+   *     }
+   *   });
    */
-  private withPolicyTimeout = <A>(f: () => Promise<A>, attempt: number = 0): (() => Promise<A>) => {
+  withTimeout = <E, A>(f: () => IO<E, A>, liftE: (error: Error) => E): IO<E, A> => {
     const timeout = this.policy.timeout;
-    if (!timeout || timeout <= 0) {
-      return f;
+    if (!timeout || timeout < 1) {
+      return f();
     }
 
-    return () =>
-      Promise.race([
-        f(),
-        new Promise<A>((_, reject) =>
-          setTimeout(
-            () => reject(new TimeoutError(`Operation timed out on attempt ${attempt} after ${timeout} milliseconds`)),
-            timeout
-          )
-        ),
+    return IO.of<E, A>(async () => {
+      const timeoutError = liftE(new TimeoutError(`The operation timed out after ${timeout} milliseconds`));
+      // Promise that completes after the specified duration.
+      const timeoutPromise = new Promise<A>((_, reject) => {
+        const id = setTimeout(() => {
+          clearTimeout(id);
+          reject(timeoutError);
+        }, timeout);
+      });
+
+      // Promise that completes when the operation f finishes.
+      const operationPromise = f()
+        .runAsync()
+        .then((result) => {
+          if (result.type === "Ok") {
+            return result.value;
+          } else {
+            throw result.error; // throw an error instead of returning it
+          }
+        });
+
+      // Returns the promise that completes first: the operation or the timeout.
+      return Promise.race([
+        operationPromise.catch((error) => {
+          throw error;
+        }),
+        timeoutPromise,
       ]);
+    });
   };
 }
 
@@ -185,10 +288,10 @@ export class TimeoutError extends Error {
  *
  * @extends Error
  */
-export class RetryLimitReachedError extends Error {
+export class RetryError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "RetryLimitReachedError";
+    this.name = "RetryError";
   }
 }
 

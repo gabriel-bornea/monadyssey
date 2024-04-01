@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@jest/globals";
-import { Err, IO, Ok } from "../src";
+import { Err, IO, NonEmptyList, Ok } from "../src";
 
 describe("IO", () => {
   describe("of", () => {
@@ -38,6 +38,11 @@ describe("IO", () => {
       const effect = IO.empty();
       expect(await effect.runAsync()).toEqual({ type: "Ok", value: undefined });
     });
+
+    it("should create a new IO with identity", async () => {
+      const effect = IO.identity(42);
+      expect(await effect.runAsync()).toEqual({ type: "Ok", value: 42 });
+    });
   });
 
   describe("refine", () => {
@@ -70,6 +75,122 @@ describe("IO", () => {
       const result = await IO.failed(new Error("Error message")).runAsync();
       const message = (result as Err<Error>).error.message;
       expect(message).toBe("Error message");
+    });
+  });
+
+  describe("map", () => {
+    it("should transform the IO value", async () => {
+      const effect = IO.ofSync(() => 3);
+      const mapped = effect.map((num) => num * 2);
+
+      expect(await mapped.runAsync()).toEqual({ type: "Ok", value: 6 });
+    });
+  });
+
+  describe("mapError", () => {
+    it("should transform the error value", async () => {
+      const effect = IO.ofSync(() => {
+        throw new Error("Operation failed");
+      });
+      const mappedError = effect.mapError((err) => err);
+      const result = await mappedError.runAsync();
+
+      expect(result.type).toEqual("Err");
+    });
+
+    it("should not map the error if result is Ok", async () => {
+      let errorOccurred = false;
+      const effect = IO.ofSync(() => 42).mapError((e) => {
+        errorOccurred = true;
+        return e;
+      });
+
+      const result = await effect.runAsync();
+
+      expect(result.type).toEqual("Ok");
+      expect(errorOccurred).toEqual(false);
+    });
+  });
+
+  describe("mapNotNull", () => {
+    it("should transform the value if not null", async () => {
+      const effect = IO.ofSync(() => 42).mapNotNull((num) => num + 1);
+      const result = await effect.runAsync();
+
+      expect(result.type).toEqual("Ok");
+      expect((result as Ok<number>).value).toEqual(43);
+    });
+
+    it("should not transform the value if null", async () => {
+      const effect = IO.ofSync(() => null).mapNotNull((num) => num + 1);
+      const result = await effect.runAsync();
+
+      expect(result.type).toEqual("Ok");
+      expect((result as Ok<number>).value).toEqual(null);
+    });
+  });
+
+  describe("flatMapNotNull", () => {
+    it("should combine if not null", async () => {
+      const effect = IO.ofSync(() => 42).flatMapNotNull((num) => IO.ofSync(() => num + 1));
+      const result = await effect.runAsync();
+
+      expect(result.type).toEqual("Ok");
+      expect((result as Ok<number>).value).toEqual(43);
+    });
+
+    it("should not combine if null", async () => {
+      const effect = IO.ofSync(() => null).flatMapNotNull((num) => IO.ofSync(() => num + 1));
+      const result = await effect.runAsync();
+
+      expect(result.type).toEqual("Ok");
+      expect((result as Ok<number>).value).toEqual(null);
+    });
+  });
+
+  describe("zip", () => {
+    it("should combine two IOs", async () => {
+      const f1 = IO.ofSync(() => "effect one");
+      const f2 = IO.ofSync(() => "effect two");
+
+      const result = await IO.zip2(f1, f2).runAsync();
+
+      expect(result.type).toEqual("Ok");
+      expect((result as Ok<string[]>).value).toEqual(["effect one", "effect two"]);
+    });
+
+    it("should accumulate the errors if both IOs fail", async () => {
+      const f1 = IO.failed(new Error("error one"));
+      const f2 = IO.failed(new Error("error two"));
+
+      const result = await IO.zip2(f1, f2).runAsync();
+      expect(result.type).toEqual("Err");
+
+      const errors = (result as Err<NonEmptyList<Error>>).error;
+      expect(errors.size).toEqual(2);
+    });
+
+    it("should combine three IOs", async () => {
+      const f1 = IO.ofSync(() => "effect one");
+      const f2 = IO.ofSync(() => "effect two");
+      const f3 = IO.ofSync(() => "effect three");
+
+      const result = await IO.zip3(f1, f2, f3).runAsync();
+
+      expect(result.type).toEqual("Ok");
+      expect((result as Ok<string[]>).value).toEqual(["effect one", "effect two", "effect three"]);
+    });
+
+    it("should accumulate the errors if all IOs fail", async () => {
+      const f1 = IO.failed(new Error("error one"));
+      const f2 = IO.failed(new Error("error two"));
+      const f3 = IO.failed(new Error("error three"));
+
+      const result = await IO.zip3(f1, f2, f3).runAsync();
+      expect(result.type).toEqual("Err");
+
+      const errors = (result as Err<NonEmptyList<Error>>).error;
+      expect(errors.size).toEqual(3);
     });
   });
 
@@ -186,6 +307,19 @@ describe("IO", () => {
     it("should return null for null value", async () => {
       const result = await IO.of(() => Promise.resolve(null)).getOrNull();
       expect(result).toBeNull();
+    });
+  });
+
+  describe("handleErrorWith", () => {
+    it("should handle the error raised", async () => {
+      const effect = IO.ofSync(() => {
+        throw new Error("Error message");
+      }).handleErrorWith(() => "Error handled");
+
+      const result = await effect.runAsync();
+
+      expect(result.type).toEqual("Err");
+      expect((result as Err<string>).error).toEqual("Error handled");
     });
   });
 
