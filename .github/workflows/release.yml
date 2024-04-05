@@ -24,7 +24,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm audit signatures
-      - run: npx semantic-release --release-as ${{ github.event.inputs.releaseType }} --dry-run
+      - run: npx semantic-release --release-as ${{ github.event.inputs.releaseType }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
