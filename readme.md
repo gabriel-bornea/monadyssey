@@ -1,3 +1,6 @@
+![CI/CD](https://github.com/gabriel-bornea/monadyssey/actions/workflows/release.yml/badge.svg)
+![npm](https://img.shields.io/npm/v/monadyssey.svg)
+
 ### Overview
 
 The `monadyssey` library is a powerful TypeScript toolkit designed to enhance the development of 
