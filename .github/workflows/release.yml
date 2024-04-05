@@ -1,0 +1,33 @@
+name: Release
+on:
+  push:
+    branches:
+      - semantic-versioning
+#  workflow_dispatch:
+#    inputs:
+#      releaseType:
+#        description: 'Release Type (major, minor, patch)'
+#        required: true
+#        default: 'patch'
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npm run build
+      - run: npm audit signatures
+      - run: npx semantic-release --release-as ${{ github.event.inputs.releaseType }} --dry-run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

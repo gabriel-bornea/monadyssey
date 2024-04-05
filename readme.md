@@ -1,8 +1,11 @@
+![CI/CD](https://github.com/gabriel-bornea/monadyssey/actions/workflows/release.yml/badge.svg)
+![npm](https://img.shields.io/npm/v/monadyssey.svg)
+
 ### Overview
 
 The `monadyssey` library is a powerful TypeScript toolkit designed to enhance the development of 
 robust applications by introducing a series of advanced data structures and control flow mechanisms. 
-With its roots in functional programming principles, monadyssey aims to solve common challenges in 
+With its roots in functional programming principles, `monadyssey` aims to solve common challenges in 
 application development, particularly around list handling, asynchronous operations, and error management.
 
 ### Functional Programming at its Core
