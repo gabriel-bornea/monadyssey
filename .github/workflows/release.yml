@@ -1,4 +1,5 @@
 name: release
+
 on:
   workflow_dispatch:
     inputs:
@@ -6,6 +7,7 @@ on:
         description: 'Release Type (major, minor, patch)'
         required: true
         default: 'patch'
+
 jobs:
   release:
     runs-on: ubuntu-latest
