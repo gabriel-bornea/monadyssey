@@ -1,14 +1,11 @@
 name: Release
 on:
-  push:
-    branches:
-      - semantic-versioning
-#  workflow_dispatch:
-#    inputs:
-#      releaseType:
-#        description: 'Release Type (major, minor, patch)'
-#        required: true
-#        default: 'patch'
+  workflow_dispatch:
+    inputs:
+      releaseType:
+        description: 'Release Type (major, minor, patch)'
+        required: true
+        default: 'patch'
 jobs:
   release:
     runs-on: ubuntu-latest

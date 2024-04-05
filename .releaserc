@@ -1,5 +1,5 @@
 {
-  "branches": ["semantic-versioning"],
+  "branches": ["main"],
   "repositoryUrl": "https://github.com/gabriel-bornea/monadyssey",
   "plugins": [
     "@semantic-release/commit-analyzer",
