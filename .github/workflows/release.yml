@@ -12,6 +12,11 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@v2
         with:
@@ -23,5 +28,5 @@ jobs:
       - run: npm run build
       - run: npx semantic-release --release-as ${{ github.event.inputs.releaseType }} --dry-run
         env:
-          GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN_GH }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
