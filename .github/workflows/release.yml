@@ -25,5 +25,5 @@ jobs:
       - run: npm run build
       - run: npx semantic-release --release-as ${{ github.event.inputs.releaseType }} --dry-run
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN_GH }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
