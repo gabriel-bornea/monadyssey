@@ -9,7 +9,7 @@
   },
   "repositoryUrl": "https://github.com/gabriel-bornea/monadyssey",
   "keywords": [
-    "functional programming"
+    "functional programming", "typescript", "IO", "NonEmptyList", "Schedule"
   ],
   "author": "Gabriel Bornea",
   "files": [
