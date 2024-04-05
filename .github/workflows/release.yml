@@ -1,5 +1,4 @@
 name: Release
-
 on:
   push:
     branches:
@@ -10,7 +9,6 @@ on:
 #        description: 'Release Type (major, minor, patch)'
 #        required: true
 #        default: 'patch'
-
 jobs:
   release:
     runs-on: ubuntu-latest
