@@ -2,7 +2,7 @@ name: Release
 on:
   push:
     branches:
-      - main
+      - semantic-versioning
 jobs:
   release:
     runs-on: ubuntu-latest
