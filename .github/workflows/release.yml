@@ -1,11 +1,8 @@
 name: Release
 on:
-  workflow_dispatch:
-    inputs:
-      releaseType:
-        description: 'Release Type (major, minor, patch)'
-        required: true
-        default: 'patch'
+  push:
+    branches:
+      - main
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -15,16 +12,16 @@ jobs:
       pull-requests: write
       id-token: write
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v2
+      - uses: actions/setup-node@v3
         with:
-          node-version: '20'
+          node-version: 'lts/*'
       - run: npm ci
       - run: npm run build
       - run: npm audit signatures
-      - run: npx semantic-release --release-as ${{ github.event.inputs.releaseType }}
+      - run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
