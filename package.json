@@ -1,7 +1,7 @@
 {
   "name": "monadyssey",
   "private": false,
-  "version": "0.0.1",
+  "version": "1.0.1",
   "type": "module",
   "repository": {
     "type": "git",
@@ -9,7 +9,11 @@
   },
   "repositoryUrl": "https://github.com/gabriel-bornea/monadyssey",
   "keywords": [
-    "functional programming", "typescript", "IO", "NonEmptyList", "Schedule"
+    "functional programming",
+    "typescript",
+    "IO",
+    "NonEmptyList",
+    "Schedule"
   ],
   "author": "Gabriel Bornea",
   "files": [
