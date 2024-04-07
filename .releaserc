@@ -1,5 +1,5 @@
 {
-  "branches": ["release-fix"],
+  "branches": ["main"],
   "repositoryUrl": "https://github.com/gabriel-bornea/monadyssey",
   "plugins": [
     [
