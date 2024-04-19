@@ -225,11 +225,11 @@ export class Schedule {
     }
 
     return IO.of<E, A>(async () => {
+      let timeoutId: NodeJS.Timeout | null = null;
       const timeoutError = liftE(new TimeoutError(`The operation timed out after ${timeout} milliseconds`));
       // Promise that completes after the specified duration.
       const timeoutPromise = new Promise<A>((_, reject) => {
-        const id = setTimeout(() => {
-          clearTimeout(id);
+        timeoutId = setTimeout(() => {
           reject(timeoutError);
         }, timeout);
       });
@@ -247,10 +247,16 @@ export class Schedule {
 
       // Returns the promise that completes first: the operation or the timeout.
       return Promise.race([
-        operationPromise.catch((error) => {
-          throw error;
+        operationPromise
+          .catch((error) => {
+            throw error;
+          })
+          .finally(() => {
+            if (timeoutId) clearTimeout(timeoutId);
+          }),
+        timeoutPromise.finally(() => {
+          if (timeoutId) clearTimeout(timeoutId);
         }),
-        timeoutPromise,
       ]);
     });
   };

@@ -1,6 +1,7 @@
 {
   "name": "monadyssey",
   "private": false,
+  "license": "MIT",
   "version": "1.0.1",
   "type": "module",
   "repository": {
@@ -10,10 +11,7 @@
   "repositoryUrl": "https://github.com/gabriel-bornea/monadyssey",
   "keywords": [
     "functional programming",
-    "typescript",
-    "IO",
-    "NonEmptyList",
-    "Schedule"
+    "typescript"
   ],
   "author": "Gabriel Bornea",
   "files": [
@@ -35,7 +33,7 @@
     "prettier": "npx prettier \"./src/**/*.{ts,tsx}\" \"./test/**/*.{ts,tsx}\" --check",
     "prettier:fix": "npm run prettier -- --write",
     "format": "npm run lint:fix && npm run prettier:fix",
-    "test": "jest --verbose --coverage --config jest.config.cjs",
+    "test": "node --expose-gc ./node_modules/.bin/jest --verbose --coverage --config jest.config.cjs --detectOpenHandles",
     "build": "tsc && npm run format && DEBUG=\"vite-plugin-dts:bundle\" && vite build"
   },
   "devDependencies": {
