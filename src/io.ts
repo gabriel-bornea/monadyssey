@@ -45,13 +45,19 @@ export interface Err<E> {
  * @template A The type of the result that the operation may yield upon success.
  */
 export class IO<E, A> {
+  private operations: Array<(input: any) => Promise<Err<E> | Ok<A>>> = [];
+
   /**
    * Private constructor to prevent direct instantiation from outside the class.
    * Use static factory methods instead.
    *
    * @param effect A function returning a Promise that resolves to either an `Err<E>` or `Ok<A>`.
    */
-  private constructor(private effect: () => Promise<Err<E> | Ok<A>>) {}
+  private constructor(private effect?: () => Promise<Err<E> | Ok<A>>) {
+    if (effect) {
+      this.operations.push(effect);
+    }
+  }
 
   /**
    * Creates an `IO` instance from an asynchronous function. This method allows you to initiate
@@ -69,16 +75,17 @@ export class IO<E, A> {
    * @param {() => Promise<A>} f An asynchronous function that returns a Promise of a result. The function
    * should not manually handle errors with try/catch; instead, any thrown errors will be automatically
    * caught and transformed into an `Err<E>` by the `IO` operation.
+   * @param {(error: unknown) => E} [liftE=(error) => error as E] A function that transforms unknown errors into
+   * type `E`. If not provided, the default transformation casts the error as `E`.
    * @returns {IO<E, A>} An `IO` instance encapsulating the asynchronous operation, which can later be
    * executed, transformed, or composed with other `IO` operations.
    */
-  static of = <E, A>(f: () => Promise<A>): IO<E, A> =>
+  static of = <E, A>(f: () => Promise<A>, liftE: (error: unknown) => E = (error) => error as E): IO<E, A> =>
     new IO(async () => {
       try {
-        const result = await f();
-        return IO.ok(result);
+        return IO.ok(await f());
       } catch (error: unknown) {
-        return IO.err(error as E);
+        return IO.err(liftE(error));
       }
     });
 
@@ -97,18 +104,19 @@ export class IO<E, A> {
    * @param {() => A} f A synchronous function that returns a result of type `A`. If this function throws
    * an exception, the exception is caught and transformed into an `Err<E>`, allowing for consistent
    * error handling within `IO` workflows.
+   * @param {(error: unknown) => E} [liftE=(error) => error as E] A function that transforms unknown errors into
+   * type `E`. If not provided, the default transformation casts the error as `E`.
    * @returns {IO<E, A>} An `IO` instance encapsulating the synchronous operation. This `IO` can be
    * executed, transformed, or composed with other `IO` instances in a manner consistent with
    * asynchronous operations, providing a seamless integration of synchronous code into asynchronous
    * functional flows.
    */
-  static ofSync = <E, A>(f: () => A): IO<E, A> =>
-    new IO(() => {
+  static ofSync = <E, A>(f: () => A, liftE: (error: unknown) => E = (error) => error as E): IO<E, A> =>
+    new IO(async () => {
       try {
-        const value = f();
-        return Promise.resolve(IO.ok(value));
+        return IO.ok(f());
       } catch (error: unknown) {
-        return Promise.resolve(IO.err(error as E));
+        return IO.err(liftE(error));
       }
     });
 
@@ -204,11 +212,11 @@ export class IO<E, A> {
    *
    * @template A The type of the result that this `IO` operation is expected to yield. The actual
    * operation, however, does not yield any value and is effectively a no-op.
-   * @returns {IO<unknown, A>} An `IO` instance representing an operation that does nothing and yields
+   * @returns {IO<never, A>} An `IO` instance representing an operation that does nothing and yields
    * an undefined result. This result is typed as `unknown`, allowing for flexible casting to any
    * desired result type `A` within the `IO` monad's compositional and type-safe framework.
    */
-  static empty = <A>(): IO<unknown, A> => new IO(async () => IO.ok(undefined as any as A));
+  static empty = <A>(): IO<never, A> => new IO<never, A>(async () => IO.ok(undefined as any as A));
 
   /**
    * Creates an `IO` instance that immediately resolves to the given value without performing any
@@ -223,12 +231,12 @@ export class IO<E, A> {
    * @template A The type of the value to be encapsulated by the resulting `IO` instance.
    * @param {A} a The value to be wrapped in an `IO` instance. This value is returned unmodified
    * by the `IO` operation, effectively making the operation an identity function within the `IO` monad.
-   * @returns {IO<unknown, A>} An `IO` instance that, when executed, immediately yields the provided
+   * @returns {IO<never, A>} An `IO` instance that, when executed, immediately yields the provided
    * value `a` without any asynchronous operation or side effect. The error type is set to `unknown`
    * as this operation does not produce errors, ensuring type safety in compositions that may handle
    * errors.
    */
-  static identity = <A>(a: A): IO<unknown, A> => new IO(async () => IO.ok(a));
+  static identity = <A>(a: A): IO<never, A> => new IO(async () => IO.ok(a));
 
   /**
    * Creates an `IO` instance that represents a failed operation with a specified error. This method
@@ -277,16 +285,15 @@ export class IO<E, A> {
    * returns `true` for the original result, the operation remains successful. If the predicate returns
    * `false`, the operation is considered failed with the new error produced by the handler function.
    */
-  refine = (predicate: (a: A) => boolean, liftE: (a: A) => E): IO<E, A> =>
-    new IO(async () => {
-      const result = await this.effect();
-      if (IO.isOk(result) && predicate(result.value)) {
-        return IO.ok(result.value);
-      } else if (IO.isOk(result)) {
+  refine(predicate: (a: A) => boolean, liftE: (a: A) => E): IO<E, A> {
+    this.operations.push(async (result: Ok<A> | Err<E>) => {
+      if (IO.isOk(result) && !predicate(result.value)) {
         return IO.err(liftE(result.value));
       }
       return result;
     });
+    return this;
+  }
 
   /**
    * Transforms the successful result of this `IO` operation using a provided function. If the operation
@@ -310,11 +317,14 @@ export class IO<E, A> {
    * transformed result. If the original operation failed, the new instance will encapsulate the original
    * error.
    */
-  map = <B>(f: (a: A) => B): IO<E, B> =>
-    new IO(async () => {
-      const result = await this.effect();
-      return IO.isOk(result) ? (IO.ok(f(result.value)) as Ok<B>) : result;
+  map = <B>(f: (a: A) => B): IO<E, B> => {
+    const effect = new IO<E, B>();
+    effect.operations = this.operations.map((op) => async (prevResult: any) => {
+      const result = await op(prevResult);
+      return IO.isOk(result) ? IO.ok(f(result.value)) : result;
     });
+    return effect;
+  };
 
   /**
    * Transforms the error of this `IO` operation using a provided function. If the operation fails, the
@@ -338,16 +348,18 @@ export class IO<E, A> {
    * transformed error. If the original operation was successful, the new instance will encapsulate the
    * original result.
    */
-  mapError = <F extends E>(f: (e: E) => F): IO<F, A> =>
-    new IO(async () => {
-      const result = await this.effect();
-
+  mapError<F extends E>(f: (e: E) => F): IO<F, A> {
+    const effect = new IO<F, A>();
+    effect.operations = this.operations.map((op) => async (prev: any) => {
+      const result = await op(prev);
       if (IO.isOk(result)) {
         return result;
       } else {
         return IO.err(f(result.error));
       }
     });
+    return effect;
+  }
 
   /**
    * Transforms the successful, non-null result of this `IO` operation using a provided function,
@@ -374,13 +386,14 @@ export class IO<E, A> {
    * or if the result was `null` or `undefined`, the new instance will encapsulate the original error
    * or a `null`/`undefined` result.
    */
-  mapNotNull = <B>(f: (a: NonNullable<A>) => B): IO<E, B> =>
-    new IO(async () => {
-      const result = await this.effect();
-      return IO.isOk(result) && result.value
-        ? (IO.ok(f(result.value as NonNullable<A>)) as Ok<B>)
-        : (result as unknown as Ok<B>);
+  mapNotNull = <B>(f: (a: NonNullable<A>) => B): IO<E, B> => {
+    const effect = new IO<E, B>();
+    effect.operations = this.operations.map((op) => async (prev: any) => {
+      const result = await op(prev);
+      return IO.isOk(result) && result.value ? IO.ok(f(result.value as NonNullable<A>)) : (result as unknown as Ok<B>);
     });
+    return effect;
+  };
 
   /**
    * Transforms the successful result of this `IO` operation into another `IO` operation using a
@@ -410,11 +423,14 @@ export class IO<E, A> {
    * resulting `IO` operation. If the original operation fails, the new instance will encapsulate
    * the original error, effectively skipping the transformation.
    */
-  flatMap = <B>(f: (a: A) => IO<E, B>): IO<E, B> =>
-    new IO(async () => {
-      const result = await this.effect();
+  flatMap = <B>(f: (a: A) => IO<E, B>): IO<E, B> => {
+    const effect = new IO<E, B>();
+    effect.operations = this.operations.map((op) => async (prev: any) => {
+      const result = await op(prev);
       return IO.isOk(result) ? await f(result.value).runAsync() : result;
     });
+    return effect;
+  };
 
   /**
    * Transforms the successful, non-null result of this `IO` operation into another `IO` operation using a
@@ -443,13 +459,16 @@ export class IO<E, A> {
    * the new instance will encapsulate the original error or represent a `null`/`undefined` outcome,
    * effectively skipping the transformation.
    */
-  flatMapNotNull = <B>(f: (a: NonNullable<A>) => IO<E, B>): IO<E, B> =>
-    new IO(async () => {
-      const result = await this.effect();
+  flatMapNotNull = <B>(f: (a: NonNullable<A>) => IO<E, B>): IO<E, B> => {
+    const effect = new IO<E, B>();
+    effect.operations = this.operations.map((op) => async (prev: any) => {
+      const result = await op(prev);
       return IO.isOk(result) && result.value
         ? await f(result.value as NonNullable<A>).runAsync()
         : (result as unknown as Ok<B>);
     });
+    return effect;
+  };
 
   /**
    * Combines two `IO` operations into a single `IO` operation that, when executed, will run both
@@ -550,18 +569,18 @@ export class IO<E, A> {
    * original operation succeeds, or if the recovery operation also succeeds, the result is of type `A`.
    * If the recovery operation fails, the resulting `IO` instance will contain the new error of type `E`.
    */
-  recover = <B extends A>(f: (error: E) => IO<E, B>): IO<E, A> =>
-    new IO(async () => {
-      const result = await this.effect();
-      switch (result.type) {
-        case "Ok":
-          return result;
-        case "Err":
-          return f(result.error).runAsync();
-        default:
-          throw new Error("Unexpected result type");
+  recover<B extends A>(f: (error: E) => IO<E, B>): IO<E, A> {
+    const effect = new IO<E, A>();
+    effect.operations = this.operations.map((op) => async (prev: any) => {
+      const result = await op(prev);
+      if (IO.isOk(result)) {
+        return result;
+      } else {
+        return f(result.error).runAsync();
       }
     });
+    return effect;
+  }
 
   /**
    * Applies a given side effect function to the successful result of this `IO` operation, without
@@ -582,14 +601,17 @@ export class IO<E, A> {
    * @returns {IO<E, A>} The same `IO` instance, allowing for method chaining. The successful result
    * is passed through unchanged, ensuring that the primary workflow continues as intended.
    */
-  tap = (f: (a: A) => void): IO<E, A> =>
-    new IO(async () => {
-      const result = await this.effect();
+  tap(f: (a: A) => void): IO<E, A> {
+    const effect = new IO<E, A>();
+    effect.operations = this.operations.map((op) => async (prev: any) => {
+      const result = await op(prev);
       if (IO.isOk(result)) {
         f(result.value);
       }
       return result;
     });
+    return effect;
+  }
 
   /**
    * Applies a given side effect function to the error of this `IO` operation, if it fails, without
@@ -611,14 +633,17 @@ export class IO<E, A> {
    * through unchanged if the operation fails, ensuring that the primary error handling flow continues
    * as intended.
    */
-  tapError = (f: (error: E) => void): IO<E, A> =>
-    new IO(async () => {
-      const result = await this.effect();
+  tapError(f: (error: E) => void): IO<E, A> {
+    const effect = new IO<E, A>(this.effect);
+    effect.operations = this.operations.map((op) => async (prev: any) => {
+      const result = await op(prev);
       if (IO.isErr(result)) {
         f(result.error);
       }
       return result;
     });
+    return effect;
+  }
 
   /**
    * Handles errors within this `IO` operation by applying a provided error handler function, which
@@ -644,10 +669,11 @@ export class IO<E, A> {
    * instance will encapsulate the error returned by the error handler function. If the original
    * operation succeeds, the new instance will encapsulate the original result.
    */
-  handleErrorWith = (handle: (error: E) => E): IO<E, A> =>
-    new IO(async () => {
+  handleErrorWith(handle: (error: E) => E): IO<E, A> {
+    const effect = new IO<E, A>(this.effect);
+    effect.operations = this.operations.map((op) => async (prev: any) => {
       try {
-        const result = await this.effect();
+        const result = await op(prev);
         if (IO.isErr(result)) {
           return IO.err(handle(result.error));
         }
@@ -656,6 +682,8 @@ export class IO<E, A> {
         return IO.err(handle(error));
       }
     });
+    return effect;
+  }
 
   /**
    * Executes the encapsulated effect and applies one of two provided functions based on the outcome:
@@ -680,8 +708,17 @@ export class IO<E, A> {
    * function based on the outcome of the `IO` operation. This provides a unified type `B` as the final
    * result, abstracting over the success/failure dichotomy.
    */
-  fold = <B>(onFailure: (e: E) => B, onSuccess: (a: A) => B): Promise<B> =>
-    this.effect().then((result) => (IO.isOk(result) ? onSuccess(result.value) : onFailure(result.error)));
+  fold = async <B>(onFailure: (e: E) => B, onSuccess: (a: A) => B): Promise<B> => {
+    const effect = new IO<B, B>(async () => {
+      let result: Err<E> | Ok<A> = { type: "Err", error: undefined as unknown as E };
+      for (const op of this.operations) {
+        result = await op(result);
+      }
+      return IO.isOk(result) ? IO.ok(onSuccess(result.value)) : IO.ok(onFailure(result.error));
+    });
+    const final = await effect.runAsync();
+    return IO.isOk(final) ? final.value : final.error;
+  };
 
   /**
    * Asynchronously executes the encapsulated effect and returns a Promise that resolves with the
@@ -701,10 +738,11 @@ export class IO<E, A> {
    * operation, or `null` if the operation failed or produced an undefined result. This approach
    * streamlines error handling by treating all errors and undefined results uniformly as `null`.
    */
-  getOrNull = async (): Promise<A | null> => {
-    const result = await this.effect();
-    return IO.isOk(result) && result.value ? result.value : null;
-  };
+  getOrNull = async (): Promise<A | null> =>
+    this.fold(
+      () => null,
+      (a) => a
+    );
 
   /**
    * Executes the encapsulated asynchronous effect and returns a Promise that resolves with the outcome
@@ -724,5 +762,11 @@ export class IO<E, A> {
    * associated with the failure. If the operation succeeds, the Promise resolves to an `Ok<A>`,
    * encapsulating the successful result.
    */
-  runAsync = (): Promise<Err<E> | Ok<A>> => this.effect();
+  runAsync = async (): Promise<Err<E> | Ok<A>> => {
+    let result: Err<E> | Ok<A> = { type: "Ok", value: undefined as unknown as A };
+    for (const op of this.operations) {
+      result = await op(result);
+    }
+    return result;
+  };
 }

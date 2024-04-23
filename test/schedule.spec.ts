@@ -126,7 +126,7 @@ describe("Schedule", () => {
     });
   });
 
-  describe("retry", () => {
+  describe("repeat", () => {
     let schedule: Schedule;
     let policy: Policy;
 
@@ -140,57 +140,55 @@ describe("Schedule", () => {
       schedule = new Schedule(policy);
     });
 
-    describe("repeat", () => {
-      it("should repeat the asynchronous function defined number of times", async () => {
-        let counter = 0;
+    it("should repeat the asynchronous function defined number of times", async () => {
+      let counter = 0;
 
-        const operation = IO.ofSync<string, number>(() => {
-          counter += 1;
+      const operation = IO.ofSync<string, number>(() => {
+        counter += 1;
+        return counter;
+      });
+
+      const liftE = (error: Error): string => error.message;
+      const result = await schedule.repeat(() => operation, liftE).runAsync();
+
+      expect(result.type).toBe("Ok");
+      expect((result as Ok<number>).value).toBe(3);
+    });
+
+    it("should return the last value after the number after retries is completed", async () => {
+      let counter = 0;
+      const f = IO.ofSync<Error, number>(() => {
+        counter += 1;
+        if (counter === 3) {
+          return 42;
+        } else {
           return counter;
-        });
-
-        const liftE = (error: Error): string => error.message;
-        const result = await schedule.repeat(() => operation, liftE).runAsync();
-
-        expect(result.type).toBe("Ok");
-        expect((result as Ok<number>).value).toBe(3);
+        }
       });
+      const liftE = (error: Error): Error => new Error(`Unexpected error: ${error.message}`);
 
-      it("should return the last value after the number after retries is completed", async () => {
-        let counter = 0;
-        const f = IO.ofSync<Error, number>(() => {
-          counter += 1;
-          if (counter === 3) {
-            return 42;
-          } else {
-            return counter;
-          }
-        });
-        const liftE = (error: Error): Error => new Error(`Unexpected error: ${error.message}`);
+      const result = await schedule.repeat(() => f, liftE).runAsync();
 
-        const result = await schedule.repeat(() => f, liftE).runAsync();
+      expect(IO.isOk(result)).toBe(true);
+      expect((result as Ok<number>).value).toBe(42);
+    });
 
-        expect(IO.isOk(result)).toBe(true);
-        expect((result as Ok<number>).value).toBe(42);
+    it("should fail if the operation repeated fails", async () => {
+      let counter = 0;
+      const f = IO.ofSync<Error, number>(() => {
+        counter += 1;
+        if (counter === 2) {
+          throw new Error("Failed to complete the operation");
+        } else {
+          return counter;
+        }
       });
+      const liftE = (error: Error) => error;
 
-      it("should fail if the operation repeated fails", async () => {
-        let counter = 0;
-        const f = IO.ofSync<Error, number>(() => {
-          counter += 1;
-          if (counter === 2) {
-            throw new Error("Failed to complete the operation");
-          } else {
-            return counter;
-          }
-        });
-        const liftE = (error: Error) => error;
+      const result = await schedule.repeat(() => f, liftE).runAsync();
 
-        const result = await schedule.repeat(() => f, liftE).runAsync();
-
-        expect(IO.isErr(result)).toBe(true);
-        expect((result as Err<Error>).error.message).toContain("Failed to complete the operation");
-      });
+      expect(IO.isErr(result)).toBe(true);
+      expect((result as Err<Error>).error.message).toContain("Failed to complete the operation");
     });
   });
 });
