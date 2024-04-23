@@ -75,15 +75,17 @@ export class IO<E, A> {
    * @param {() => Promise<A>} f An asynchronous function that returns a Promise of a result. The function
    * should not manually handle errors with try/catch; instead, any thrown errors will be automatically
    * caught and transformed into an `Err<E>` by the `IO` operation.
+   * @param {(error: unknown) => E} [liftE=(error) => error as E] A function that transforms unknown errors into
+   * type `E`. If not provided, the default transformation casts the error as `E`.
    * @returns {IO<E, A>} An `IO` instance encapsulating the asynchronous operation, which can later be
    * executed, transformed, or composed with other `IO` operations.
    */
-  static of = <E, A>(f: () => Promise<A>): IO<E, A> =>
+  static of = <E, A>(f: () => Promise<A>, liftE: (error: unknown) => E = (error) => error as E): IO<E, A> =>
     new IO(async () => {
       try {
         return IO.ok(await f());
       } catch (error: unknown) {
-        return IO.err(error as E);
+        return IO.err(liftE(error));
       }
     });
 
@@ -102,17 +104,19 @@ export class IO<E, A> {
    * @param {() => A} f A synchronous function that returns a result of type `A`. If this function throws
    * an exception, the exception is caught and transformed into an `Err<E>`, allowing for consistent
    * error handling within `IO` workflows.
+   * @param {(error: unknown) => E} [liftE=(error) => error as E] A function that transforms unknown errors into
+   * type `E`. If not provided, the default transformation casts the error as `E`.
    * @returns {IO<E, A>} An `IO` instance encapsulating the synchronous operation. This `IO` can be
    * executed, transformed, or composed with other `IO` instances in a manner consistent with
    * asynchronous operations, providing a seamless integration of synchronous code into asynchronous
    * functional flows.
    */
-  static ofSync = <E, A>(f: () => A): IO<E, A> =>
+  static ofSync = <E, A>(f: () => A, liftE: (error: unknown) => E = (error) => error as E): IO<E, A> =>
     new IO(async () => {
       try {
         return IO.ok(f());
       } catch (error: unknown) {
-        return IO.err(error as E);
+        return IO.err(liftE(error));
       }
     });
 
@@ -734,18 +738,11 @@ export class IO<E, A> {
    * operation, or `null` if the operation failed or produced an undefined result. This approach
    * streamlines error handling by treating all errors and undefined results uniformly as `null`.
    */
-  getOrNull = async (): Promise<A | null> => {
-    const effect = new IO<A | null, A | null>(async () => {
-      let result: Err<E> | Ok<A> = { type: "Err", error: undefined as unknown as E };
-      for (const op of this.operations) {
-        result = await op(result);
-      }
-      return IO.isOk(result) && result.value !== undefined ? IO.ok(result.value) : IO.ok(null);
-    });
-    return effect.runAsync().then((result) => {
-      return IO.isOk(result) ? result.value : null;
-    });
-  };
+  getOrNull = async (): Promise<A | null> =>
+    this.fold(
+      () => null,
+      (a) => a
+    );
 
   /**
    * Executes the encapsulated asynchronous effect and returns a Promise that resolves with the outcome
@@ -766,7 +763,7 @@ export class IO<E, A> {
    * encapsulating the successful result.
    */
   runAsync = async (): Promise<Err<E> | Ok<A>> => {
-    let result: any = { type: "Ok", value: undefined }; // Start with a neutral OK
+    let result: Err<E> | Ok<A> = { type: "Ok", value: undefined as unknown as A };
     for (const op of this.operations) {
       result = await op(result);
     }

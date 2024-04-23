@@ -34,6 +34,17 @@ describe("IO", () => {
       expect(error.message).toBe("Operation failed");
     });
 
+    it("should transform the error using optional liftE", async () => {
+      const result = await IO.of(
+        async () => {
+          throw new Error("Operation failed");
+        },
+        (e) => `Unexpected error: ${e}`
+      ).runAsync();
+      expect(IO.isErr(result)).toBe(true);
+      expect((result as Err<string>).error).toBe("Unexpected error: Error: Operation failed");
+    });
+
     it("should create a new IO that does nothing", async () => {
       const effect = IO.empty();
       expect(await effect.runAsync()).toEqual({ type: "Ok", value: undefined });
