@@ -212,11 +212,11 @@ export class IO<E, A> {
    *
    * @template A The type of the result that this `IO` operation is expected to yield. The actual
    * operation, however, does not yield any value and is effectively a no-op.
-   * @returns {IO<unknown, A>} An `IO` instance representing an operation that does nothing and yields
+   * @returns {IO<never, A>} An `IO` instance representing an operation that does nothing and yields
    * an undefined result. This result is typed as `unknown`, allowing for flexible casting to any
    * desired result type `A` within the `IO` monad's compositional and type-safe framework.
    */
-  static empty = <A>(): IO<unknown, A> => new IO<unknown, A>(async () => IO.ok(undefined as any as A));
+  static empty = <A>(): IO<never, A> => new IO<never, A>(async () => IO.ok(undefined as any as A));
 
   /**
    * Creates an `IO` instance that immediately resolves to the given value without performing any
@@ -231,12 +231,12 @@ export class IO<E, A> {
    * @template A The type of the value to be encapsulated by the resulting `IO` instance.
    * @param {A} a The value to be wrapped in an `IO` instance. This value is returned unmodified
    * by the `IO` operation, effectively making the operation an identity function within the `IO` monad.
-   * @returns {IO<unknown, A>} An `IO` instance that, when executed, immediately yields the provided
+   * @returns {IO<never, A>} An `IO` instance that, when executed, immediately yields the provided
    * value `a` without any asynchronous operation or side effect. The error type is set to `unknown`
    * as this operation does not produce errors, ensuring type safety in compositions that may handle
    * errors.
    */
-  static identity = <A>(a: A): IO<unknown, A> => new IO(async () => IO.ok(a));
+  static identity = <A>(a: A): IO<never, A> => new IO(async () => IO.ok(a));
 
   /**
    * Creates an `IO` instance that represents a failed operation with a specified error. This method
