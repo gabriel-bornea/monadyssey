@@ -2,13 +2,13 @@
  * Represents a type which is either a Left (failure) or a Right (success).
  * Left typically stores an error or failure state, while Right stores a success value.
  */
-interface Either<A, B> {
+export interface Either<A, B> {
   /**
    * Transforms the right value of this Either by applying a function and returns a new Either.
    * @param f - A transformation function to apply to the right value.
    * @returns A new Either instance with the transformed value if this is a Right; otherwise, a Left.
    * @example
-   * const result = new Right(5).map(x => x * 2); // Returns Right(10)
+   * const result = Right.of(5).map(x => x * 2); // Returns Right(10)
    */
   map<C>(f: (right: B) => C): Either<A, C>;
 
@@ -18,7 +18,7 @@ interface Either<A, B> {
    * @param f - A transformation function to apply that returns an Either.
    * @returns The result of the function if this is a Right; otherwise, a Left.
    * @example
-   * const result = new Right(5).flatMap(x => new Right(x * 2)); // Returns Right(10)
+   * const result = Right.of(5).flatMap(x => Right.of(x * 2)); // Returns Right(10)
    */
   flatMap<C>(f: (right: B) => Either<A, C>): Either<A, C>;
 
@@ -28,7 +28,7 @@ interface Either<A, B> {
    * @param ifRight - A function to handle a Right value.
    * @returns The result of the applied function.
    * @example
-   * const result = new Right(5).fold(
+   * const result = Right.of(5).fold(
    *   error => 'Error occurred',
    *   value => 'Success with ' + value
    * ); // Returns 'Success with 5'
@@ -40,7 +40,7 @@ interface Either<A, B> {
    * @param action - A function to execute with the left value.
    * @returns The original Either instance, facilitating method chaining.
    * @example
-   * new Left('Error').onLeft(err => console.log(err)); // Logs "Error"
+   * Left.of('Error').onLeft(err => console.log(err)); // Logs "Error"
    */
   onLeft(action: (left: A) => void): Either<A, B>;
 
@@ -49,13 +49,17 @@ interface Either<A, B> {
    * @param action - A function to execute with the right value.
    * @returns The original Either instance, facilitating method chaining.
    * @example
-   * new Right(5).onRight(value => console.log(value)); // Logs "5"
+   * Right.of(5).onRight(value => console.log(value)); // Logs "5"
    */
   onRight(action: (right: B) => void): Either<A, B>;
 }
 
-class Left<A> implements Either<A, never> {
-  constructor(public readonly value: A) {
+export class Left<A> implements Either<A, never> {
+  private constructor(public readonly value: A) {
+  }
+
+  static of<A>(value: A): Left<A> {
+    return new Left<A>(value);
   }
 
   map<C>(_: (right: never) => C): Either<A, C> {
@@ -80,8 +84,12 @@ class Left<A> implements Either<A, never> {
   }
 }
 
-class Right<B> implements Either<never, B> {
-  constructor(public readonly value: B) {
+export class Right<B> implements Either<never, B> {
+  private constructor(public readonly value: B) {
+  }
+
+  static of<B>(value: B): Right<B> {
+    return new Right<B>(value);
   }
 
   map<C>(f: (right: B) => C): Either<never, C> {
