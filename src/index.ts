@@ -4,3 +4,5 @@ export { NonEmptyList } from "./non-empty-list.ts";
 export type { Nel } from "./non-empty-list.ts";
 export { Schedule, RepeatError, PolicyValidationError, TimeoutError, RetryError } from "./schedule.ts";
 export type { Policy } from "./schedule.ts";
+export type { Either } from "./either.ts";
+export { Left, Right } from "./either.ts";
