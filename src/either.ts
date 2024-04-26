@@ -64,8 +64,7 @@ export interface Either<A, B> {
 }
 
 export class Left<A> implements Either<A, never> {
-  private constructor(public readonly value: A) {
-  }
+  private constructor(public readonly value: A) {}
 
   static of<A>(value: A): Left<A> {
     return new Left<A>(value);
@@ -98,8 +97,7 @@ export class Left<A> implements Either<A, never> {
 }
 
 export class Right<B> implements Either<never, B> {
-  private constructor(public readonly value: B) {
-  }
+  private constructor(public readonly value: B) {}
 
   static of<B>(value: B): Right<B> {
     return new Right<B>(value);
