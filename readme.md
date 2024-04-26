@@ -99,6 +99,40 @@ that may result in a success (`Ok<A>`) or an error (`Err<E>`).
 
 * `zip2(f1, f2)`, `zip3(f1, f2, f3)`: Combines multiple IO operations into a single operation, executing them in parallel.
 
+### Either<A, B>
+
+The `Either<A, B>` interface represents a value of one of two possible types: a failure (`Left<A>`) or a success (`Right<B>`). It is typically used for error handling without exceptions.
+
+*Factory Methods*:
+
+* `Left.of(value: A): Either<A, never>`: Creates an instance of Left, representing the failure state.
+* `Right.of(value: B): Either<never, B>`: Creates an instance of Right, representing the success state.
+
+*Instance Methods*:
+
+* `map(f: (b: B) => C): Either<A, C>`: Applies a function to the Right value, if present.
+* `mapLeft(f: (a: A) => C): Either<C, B>`: Applies a function to the Left value, if present.
+* `flatMap(f: (b: B) => Either<A, C>): Either<A, C>`: Applies a function that returns an Either, if the instance is Right.
+* `fold(ifLeft: (a: A) => C, ifRight: (b: B) => C): C`: Resolves the Either by applying the appropriate function based on its state.
+* `tap(action: (b: B) => void): Either<A, B>`: Executes a function on the Right value, returning the original Either.
+* `tapLeft(action: (a: A) => void): Either<A, B>`: Executes a function on the Left value, returning the original Either.
+
+*Usage Examples*:
+
+```typescript
+const processInput = (input: string): Either<Error, number> =>
+  input.match(/^\d+$/) ? Right.of(parseInt(input)) : Left.of(new Error("Invalid input"));
+
+const result = processInput("123")
+  .map(x => x * 2)
+  .fold(
+    err => err.message,
+    val => `Processed value: ${val}`
+  );
+
+console.log(result); // "Processed value: 246"
+```
+
 ### Usage
 This library is designed to be used in TypeScript applications where functional programming patterns 
 are preferred for managing asynchronous operations, ensuring safety from empty lists, and handling 
