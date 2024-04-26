@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@jest/globals";
-import { Either, Left, Right } from "../src/either";
+import { Either, Left, Right } from "../src";
 
 describe("Either", () => {
   describe("map", () => {
