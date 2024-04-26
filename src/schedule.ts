@@ -180,8 +180,8 @@ export class Schedule {
         }
       }
 
-      if (lastSuccessResult !== null) {
-        return lastSuccessResult;
+      if (lastSuccessResult !== null && lastSuccessResult !== undefined) {
+        return lastSuccessResult as A;
       }
 
       throw new RepeatError("The function provided never succeeded");
