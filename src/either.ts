@@ -13,6 +13,15 @@ export interface Either<A, B> {
   map<C>(f: (right: B) => C): Either<A, C>;
 
   /**
+   * Transforms the left value of this Either by applying a function and returns a new Either.
+   * @param f - A transformation function to apply to the left value.
+   * @returns A new Either instance with the transformed value if this is a Left; otherwise, a Right.
+   * @example
+   * const result = Left.of(5).mapLeft(x => x * 2); // Returns Left(10)
+   */
+  mapLeft<C>(f: (left: A) => C): Either<C, B>;
+
+  /**
    * Applies a transformation function to the right value that returns an Either,
    * enabling chaining of operations that may fail.
    * @param f - A transformation function to apply that returns an Either.
@@ -36,22 +45,22 @@ export interface Either<A, B> {
   fold<C>(ifLeft: (left: A) => C, ifRight: (right: B) => C): C;
 
   /**
-   * Executes a provided function if this is a Left, used for side effects.
-   * @param action - A function to execute with the left value.
-   * @returns The original Either instance, facilitating method chaining.
-   * @example
-   * Left.of('Error').onLeft(err => console.log(err)); // Logs "Error"
-   */
-  onLeft(action: (left: A) => void): Either<A, B>;
-
-  /**
    * Executes a provided function if this is a Right, used for side effects.
    * @param action - A function to execute with the right value.
    * @returns The original Either instance, facilitating method chaining.
    * @example
    * Right.of(5).onRight(value => console.log(value)); // Logs "5"
    */
-  onRight(action: (right: B) => void): Either<A, B>;
+  tap(action: (right: B) => void): Either<A, B>;
+
+  /**
+   * Executes a provided function if this is a Left, used for side effects.
+   * @param action - A function to execute with the left value.
+   * @returns The original Either instance, facilitating method chaining.
+   * @example
+   * Left.of('Error').onLeft(err => console.log(err)); // Logs "Error"
+   */
+  tapLeft(action: (left: A) => void): Either<A, B>;
 }
 
 export class Left<A> implements Either<A, never> {
@@ -66,6 +75,10 @@ export class Left<A> implements Either<A, never> {
     return this;
   }
 
+  mapLeft<C>(f: (left: A) => C): Either<C, never> {
+    return new Left(f(this.value));
+  }
+
   flatMap<C>(_: (right: never) => Either<A, C>): Either<A, C> {
     return this;
   }
@@ -74,12 +87,12 @@ export class Left<A> implements Either<A, never> {
     return ifLeft(this.value);
   }
 
-  onLeft(action: (left: A) => void): Either<A, never> {
-    action(this.value);
+  tap(_: (right: never) => void): Either<A, never> {
     return this;
   }
 
-  onRight(_: (right: never) => void): Either<A, never> {
+  tapLeft(action: (left: A) => void): Either<A, never> {
+    action(this.value);
     return this;
   }
 }
@@ -96,6 +109,10 @@ export class Right<B> implements Either<never, B> {
     return new Right<C>(f(this.value));
   }
 
+  mapLeft<C>(_: (left: never) => C): Either<C, B> {
+    return this;
+  }
+
   flatMap<A, C>(f: (right: B) => Either<A, C>): Either<A, C> {
     return f(this.value);
   }
@@ -104,12 +121,12 @@ export class Right<B> implements Either<never, B> {
     return ifRight(this.value);
   }
 
-  onLeft(_: (left: never) => void): Either<never, B> {
+  tap(action: (right: B) => void): Either<never, B> {
+    action(this.value);
     return this;
   }
 
-  onRight(action: (right: B) => void): Either<never, B> {
-    action(this.value);
+  tapLeft(_: (left: never) => void): Either<never, B> {
     return this;
   }
 }

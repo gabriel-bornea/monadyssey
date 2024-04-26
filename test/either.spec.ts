@@ -16,6 +16,20 @@ describe("Either", () => {
     });
   });
 
+  describe("mapLeft", () => {
+    it("should transform the left value of a Left instance", () => {
+      const either: Either<number, string> = Left.of(5);
+      const mapped = either.mapLeft((value) => value * 2);
+      expect(mapped).toEqual(Left.of(10));
+    });
+
+    it("should not affect a Right instance", () => {
+      const either: Either<number, string> = Right.of("test");
+      const mapped = either.mapLeft((value) => value * 2);
+      expect(mapped).toEqual(Right.of("test"));
+    });
+  });
+
   describe("flatMap", () => {
     it("should chain operations for a Right instance", () => {
       const either: Either<string, number> = Right.of(5);
@@ -50,11 +64,11 @@ describe("Either", () => {
     });
   });
 
-  describe("onLeft", () => {
+  describe("tapLeft", () => {
     it("should execute the action for a Left instance", () => {
       let errorMessage = "";
       const either: Either<string, number> = Left.of("Error");
-      const result = either.onLeft((error) => {
+      const result = either.tapLeft((error) => {
         errorMessage = error;
       });
       expect(errorMessage).toBe("Error");
@@ -64,7 +78,7 @@ describe("Either", () => {
     it("should not execute the action for a Right instance", () => {
       let errorMessage = "";
       const either: Either<string, number> = Right.of(5);
-      const result = either.onLeft((error) => {
+      const result = either.tapLeft((error) => {
         errorMessage = error;
       });
       expect(errorMessage).toBe("");
@@ -72,11 +86,11 @@ describe("Either", () => {
     });
   });
 
-  describe("onRight", () => {
+  describe("tap", () => {
     it("should execute the action for a Right instance", () => {
       let successMessage = "";
       const either: Either<string, number> = Right.of(5);
-      const result = either.onRight((value) => {
+      const result = either.tap((value) => {
         successMessage = `Success with ${value}`;
       });
       expect(successMessage).toBe("Success with 5");
@@ -86,7 +100,7 @@ describe("Either", () => {
     it("should not execute the action for a Left instance", () => {
       let successMessage = "";
       const either: Either<string, number> = Left.of("Error");
-      const result = either.onRight((value) => {
+      const result = either.tap((value) => {
         successMessage = `Success with ${value}`;
       });
       expect(successMessage).toBe("");
