@@ -1,3 +1,17 @@
+# [1.2.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.1.0...v1.2.0) (2024-04-28)
+
+
+### Features
+
+* implement getOrElse and getOrHandle ([#23](https://github.com/gabriel-bornea/monadyssey/issues/23)) ([ff9d6d1](https://github.com/gabriel-bornea/monadyssey/commit/ff9d6d15cd30cf1979771f2b96cf28a99efadb92))
+
+# [1.1.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.0.2...v1.1.0) (2024-04-26)
+
+
+### Features
+
+* initial version of Either data type ([#18](https://github.com/gabriel-bornea/monadyssey/issues/18)) ([6fd0058](https://github.com/gabriel-bornea/monadyssey/commit/6fd0058390f52198a83916694d6f5badaef741dd))
+
 ## [1.0.2](https://github.com/gabriel-bornea/monadyssey/compare/v1.0.1...v1.0.2) (2024-04-23)
 
 

@@ -81,7 +81,7 @@ export class IO<E, A> {
    * executed, transformed, or composed with other `IO` operations.
    */
   static of = <E, A>(f: () => Promise<A>, liftE: (error: unknown) => E = (error) => error as E): IO<E, A> =>
-    new IO(async () => {
+    new IO(async (): Promise<Err<E> | Ok<A>> => {
       try {
         return IO.ok(await f());
       } catch (error: unknown) {
@@ -348,7 +348,7 @@ export class IO<E, A> {
    * transformed error. If the original operation was successful, the new instance will encapsulate the
    * original result.
    */
-  mapError<F extends E>(f: (e: E) => F): IO<F, A> {
+  mapError<F>(f: (e: E) => F): IO<F, A> {
     const effect = new IO<F, A>();
     effect.operations = this.operations.map((op) => async (prev: any) => {
       const result = await op(prev);
@@ -743,6 +743,48 @@ export class IO<E, A> {
       () => null,
       (a) => a
     );
+
+  /**
+   * Asynchronously executes the encapsulated effect and returns a Promise that resolves with the
+   * operation's result if successful, or the provided default value if the operation fails.
+   *
+   * This default value can be either a constant or a function that returns a value of type `A`.
+   *
+   * @example
+   * getOrElse(() => 5);
+   *
+   * @template A The type of the result that may be produced by the operation upon success.
+   * @param {A | (() => A)} defaultValue The default value to be returned if the operation fails.
+   * @returns {Promise<A>} A Promise that, when resolved, yields the successful result of the operation, or the provided default value if the operation fails.
+   */
+  getOrElse = (defaultValue: () => A): Promise<A> =>
+    this.fold(
+      () => defaultValue(),
+      (a) => a
+    );
+
+  /**
+   * Asynchronously executes the encapsulated effect and returns a Promise that resolves with the
+   * operation's result if successful, or invokes the provided handler function if the operation fails.
+   *
+   * This handler function is supposed to handle the error scenario and return an appropriate value
+   * of type `A` that can be used in its place.
+   *
+   * @example  Usage with a handler function:
+   * getOrHandle(error => {
+   *   console.log(error);
+   *   return defaultA;
+   * });
+   *
+   * @template E The type of the error that may be produced by the operation if it fails.
+   * @template A The type of the result that may be produced by the operation upon success.
+   * @param {(error: E) => A} handler The handler function to be invoked if the operation fails.
+   * @returns {Promise<A>} A Promise that, when resolved, yields the successful result of the operation,
+   * or the return value of the provided handler function if the operation failed.
+   */
+  getOrHandle = async (handler: (error: E) => A): Promise<A> => {
+    return this.fold(handler, (v) => v);
+  };
 
   /**
    * Executes the encapsulated asynchronous effect and returns a Promise that resolves with the outcome

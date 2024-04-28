@@ -321,6 +321,30 @@ describe("IO", () => {
     });
   });
 
+  describe("getOrElse", () => {
+    it("should return the successful value", async () => {
+      const result = await IO.of(() => Promise.resolve("success")).getOrElse(() => "N/A");
+      expect(result).toEqual("success");
+    });
+
+    it("should return defaultValue for error", async () => {
+      const result = await IO.of<Error, string>(() => Promise.reject("error")).getOrElse(() => "N/A");
+      expect(result).toEqual("N/A");
+    });
+  });
+
+  describe("getOrHandle", () => {
+    it("should return the successful value", async () => {
+      const result = await IO.of(() => Promise.resolve("success")).getOrHandle(() => "N/A");
+      expect(result).toEqual("success");
+    });
+
+    it("should return transformed error for error", async () => {
+      const result = await IO.of<Error, string>(() => Promise.reject(Error("error"))).getOrHandle((e) => e.message);
+      expect(result).toEqual("error");
+    });
+  });
+
   describe("handleErrorWith", () => {
     it("should handle the error raised", async () => {
       const effect = IO.ofSync(() => {
