@@ -1,6 +1,5 @@
 import { describe, expect, it } from "@jest/globals";
 import { Err, IO, NonEmptyList, Ok } from "../src";
-import { ContinuationError } from "../src/io";
 
 describe("IO", () => {
   describe("of", () => {
@@ -40,7 +39,7 @@ describe("IO", () => {
         async () => {
           throw new Error("Operation failed");
         },
-        (e) => `Unexpected error: ${e}`,
+        (e) => `Unexpected error: ${e}`
       ).runAsync();
       expect(IO.isErr(result)).toBe(true);
       expect((result as Err<string>).error).toBe("Unexpected error: Error: Operation failed");
@@ -62,7 +61,7 @@ describe("IO", () => {
       const result = await IO.of(async () => 42)
         .refine(
           (value) => value === 42,
-          () => "The expression was not evaluated to 42",
+          () => "The expression was not evaluated to 42"
         )
         .runAsync();
 
@@ -73,7 +72,7 @@ describe("IO", () => {
       const result = await IO.of(async () => 42)
         .refine(
           (value) => value === 0,
-          () => "The expression was not evaluated to 0",
+          () => "The expression was not evaluated to 0"
         )
         .runAsync();
       const message = (result as Err<string>).error;
@@ -398,27 +397,33 @@ describe("IO", () => {
 
   describe("forM", () => {
     it("should bind multiple operations", async () => {
-      const result = await IO.gen(function* () {
-        const one = yield IO.ofSync(() => 1);
-        const two = one + 1;
-        const three = yield IO.ofSync(() => 3);
+      const result = await IO.forM(async (bind) => {
+        const one = await bind(IO.ofSync(() => 1));
+        const two = await bind(IO.ofSync(() => 2));
+        const three = await bind(IO.ofSync(() => 3));
 
         return one + two + three;
       });
 
-      expect(result).toBe(6);
+      expect(IO.isOk(result)).toBe(true);
+      expect((result as Ok<number>).value).toBe(6);
     });
 
-    it ("should short-circuit if an error occurs", async () => {
-      const result = await IO.gen(function* () {
-        const one = yield IO.ofSync(() => 1);
-        const two = yield IO.failed(new Error("Operation failed"));
-        const three = yield IO.ofSync(() => 3);
+    it("should short-circuit the computation on error", async () => {
+      const result = await IO.forM(async (bind) => {
+        const one = await bind(IO.ofSync(() => 1));
+        const two = await bind(
+          IO.ofSync(() => {
+            throw new Error("fail");
+          })
+        );
+        const three = await bind(IO.ofSync(() => 3));
 
         return one + two + three;
       });
 
-      expect(result).toBeInstanceOf(ContinuationError);
-    })
+      expect(IO.isErr(result)).toBe(true);
+      expect((result as Err<Error>).error.message).toBe("fail");
+    });
   });
 });

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { NonEmptyList } from "./non-empty-list.ts";
+import { Experimental } from "./decorators.ts";
 
 /**
  * Represents a successful outcome of an operation.
@@ -812,24 +813,40 @@ export class IO<E, A> {
     return result;
   };
 
-  static gen<E, A>(f: () => Generator<IO<E, A>, A, any>): Promise<A> {
-    const generator = f();
-    const step = async (value?: any): Promise<A> => {
-      const result = generator.next(value);
-      if (result.done) {
-        return result.value;
-      }
-      return await step(await result.value.getOrElse(() => {
-        throw new ContinuationError("fail");
-      }));
+  @Experimental()
+  static async forM<E, A>(
+    operation: (bind: <B>(effect: IO<E, B>) => Promise<B>) => Promise<A>
+  ): Promise<Err<E> | Ok<A>> {
+    const operations: Array<Promise<any>> = [];
+
+    const bind = async <B>(eff: IO<E, B>): Promise<B> => {
+      const operation = eff.runAsync().then((result) => {
+        switch (result.type) {
+          case "Ok":
+            return result.value;
+          case "Err":
+            throw result.error;
+          default:
+            throw new ContinuationError("`bind` can be used only on IO operations");
+        }
+      });
+      operations.push(operation);
+      return operation;
     };
-    return step();
+
+    try {
+      const result = await operation(bind);
+      await Promise.all(operations);
+      return IO.ok(result);
+    } catch (error) {
+      return IO.err(error as E);
+    }
   }
 }
 
 export class ContinuationError extends Error {
   constructor(readonly message: string) {
     super(message);
-    this.name = "ContinuationError"
+    this.name = "ContinuationError";
   }
 }
