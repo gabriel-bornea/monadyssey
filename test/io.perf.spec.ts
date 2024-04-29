@@ -45,4 +45,15 @@ describe("IO simulation", () => {
         .runAsync();
     });
   });
+
+  it("forM", () => {
+    perf("forM", async () => {
+      await IO.forM(async (bind) => {
+        const a = await bind(IO.of(() => Promise.resolve(1)));
+        const b = await bind(IO.of(() => Promise.resolve(2)));
+
+        return a + b;
+      });
+    });
+  });
 });

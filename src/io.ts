@@ -813,6 +813,35 @@ export class IO<E, A> {
     return result;
   };
 
+  /**
+   * Performs a monadic bind over a sequence of IO operations encapsulated in an `IO` monad.
+   * This function abstracts the complexity of chaining and error management of IO operations,
+   * allowing for a declarative style of programming. This method is experimental and may
+   * change in future releases.
+   *
+   * @template E - The error type that can be returned in case of failure.
+   * @template A - The result type of the successful execution of the `operation`.
+   * @param {function(bind: <B>(effect: IO<E, B>) => Promise<B>): Promise<A>} operation -
+   *        A function that takes a `bind` function and returns a `Promise`. The `bind` function
+   *        is used to execute `IO` operations sequentially. `operation` should utilize `bind`
+   *        to chain together several `IO` operations and compute a final result based on their
+   *        successful execution.
+   * @returns {Promise<Err<E> | Ok<A>>} A promise that resolves to either an `Err` with an error `E`,
+   *          if any of the IO operations fail, or an `Ok` with value `A`, if all operations
+   *          complete successfully. The method ensures that all started operations are completed
+   *          before it resolves.
+   *
+   * @example
+   * // Assuming IO.ofSync is defined properly to wrap synchronous code into an IO monad.
+   * const calculateSum = IO.forM(async bind => {
+   *   const one = await bind(IO.ofSync(() => 1));
+   *   const two = await bind(IO.ofSync(() => 2));
+   *   const three = await bind(IO.ofSync(() => 3));
+   *   return one + two + three;  // Returns Ok(6) if all operations are successful.
+   * });
+   *
+   * calculateSum.then(result => console.log(result)); // Expected output: Ok(6)
+   */
   @Experimental()
   static async forM<E, A>(
     operation: (bind: <B>(effect: IO<E, B>) => Promise<B>) => Promise<A>
@@ -844,6 +873,17 @@ export class IO<E, A> {
   }
 }
 
+/**
+ * Represents errors that occur during the continuation of operations, especially
+ * within monadic bind operations or asynchronous chains where continuation
+ * semantics are violated or cannot be executed due to some failure conditions.
+ *
+ * This error class is typically used in scenarios where a sequence of operations
+ * needs strict error handling and where each step's execution is contingent upon
+ * the successful completion of the previous one.
+ *
+ * @extends Error
+ */
 export class ContinuationError extends Error {
   constructor(readonly message: string) {
     super(message);
