@@ -811,4 +811,25 @@ export class IO<E, A> {
     }
     return result;
   };
+
+  static gen<E, A>(f: () => Generator<IO<E, A>, A, any>): Promise<A> {
+    const generator = f();
+    const step = async (value?: any): Promise<A> => {
+      const result = generator.next(value);
+      if (result.done) {
+        return result.value;
+      }
+      return await step(await result.value.getOrElse(() => {
+        throw new ContinuationError("fail");
+      }));
+    };
+    return step();
+  }
+}
+
+export class ContinuationError extends Error {
+  constructor(readonly message: string) {
+    super(message);
+    this.name = "ContinuationError"
+  }
 }

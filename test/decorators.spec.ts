@@ -16,10 +16,12 @@ describe("decorators", () => {
       const instance = new ClassUnderTest();
       const result = instance.methodUnderTest(2);
 
-      expect(console.warn).toHaveBeenCalledWith("methodUnderTest is marked as experimental. It is subject to change and should be used with caution.");
+      expect(console.warn).toHaveBeenCalledWith(
+        "methodUnderTest is marked as experimental. It is subject to change and should be used with caution."
+      );
       expect(result).toEqual(4);
-    })
-  })
+    });
+  });
 
   describe("deprecated", () => {
     it("should log the deprecation warning message", () => {
@@ -35,7 +37,9 @@ describe("decorators", () => {
       const instance = new ClassUnderTest();
       instance.methodUnderTest(2);
 
-      expect(console.warn).toHaveBeenCalledWith("methodUnderTest is deprecated and will be removed in future versions. Use newMethod instead.");
-    })
-  })
-})
+      expect(console.warn).toHaveBeenCalledWith(
+        "methodUnderTest is deprecated and will be removed in future versions. Use newMethod instead."
+      );
+    });
+  });
+});
