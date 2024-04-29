@@ -96,6 +96,20 @@ describe("IO", () => {
 
       expect(await mapped.runAsync()).toEqual({ type: "Ok", value: 6 });
     });
+
+    it("should lazily execute the operation", async () => {
+      let sideEffect = false;
+
+      const effect = IO.ofSync(() => 3);
+      const mapped = effect.map((num) => {
+        sideEffect = true;
+        return num * 2;
+      });
+
+      expect(sideEffect).toBe(false);
+      await mapped.runAsync();
+      expect(sideEffect).toBe(true);
+    });
   });
 
   describe("mapError", () => {

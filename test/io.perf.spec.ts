@@ -49,8 +49,8 @@ describe("IO simulation", () => {
   it("forM", () => {
     perf("forM", async () => {
       await IO.forM(async (bind) => {
-        const a = await bind(IO.of(() => Promise.resolve(1)));
-        const b = await bind(IO.of(() => Promise.resolve(2)));
+        const a = await bind(IO.ofSync(() => 1));
+        const b = await bind(IO.ofSync(() => 2));
 
         return a + b;
       });
