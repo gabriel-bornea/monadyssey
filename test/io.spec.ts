@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@jest/globals";
 import { Err, IO, NonEmptyList, Ok } from "../src";
+import { ContinuationError } from "../src/io";
 
 describe("IO", () => {
   describe("of", () => {
@@ -426,18 +427,14 @@ describe("IO", () => {
     it("should short-circuit the computation on error", async () => {
       const result = await IO.forM(async (bind) => {
         const one = await bind(IO.ofSync(() => 1));
-        const two = await bind(
-          IO.ofSync(() => {
-            throw new Error("fail");
-          })
-        );
-        const three = await bind(IO.ofSync(() => 3));
+        await bind(IO.failed("fail"));
+        const two = await bind(IO.ofSync(() => 2));
 
-        return one + two + three;
+        return one + two;
       });
 
       expect(IO.isErr(result)).toBe(true);
-      expect((result as Err<Error>).error.message).toBe("fail");
+      expect((result as Err<Error>).error).toBeInstanceOf(ContinuationError);
     });
   });
 });

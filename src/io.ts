@@ -854,9 +854,9 @@ export class IO<E, A> {
           case "Ok":
             return result.value;
           case "Err":
-            throw result.error;
+            throw new ContinuationError(result.error);
           default:
-            throw new ContinuationError("`bind` can be used only on IO operations");
+            throw new UnsupportedTypeError("`bind` can be used only on `IO` operations");
         }
       });
       operations.push(operation);
@@ -884,9 +884,24 @@ export class IO<E, A> {
  *
  * @extends Error
  */
-export class ContinuationError extends Error {
-  constructor(readonly message: string) {
-    super(message);
+export class ContinuationError<E> extends Error {
+  constructor(readonly error: E) {
+    super();
     this.name = "ContinuationError";
+  }
+}
+
+/**
+ * Represents an error for unsupported types used in operations where only specific types are allowed.
+ * This custom error class extends the standard Error class and provides a specific error name
+ * to distinguish it from other types of errors.
+ *
+ * @class UnsupportedTypeError
+ * @extends {Error}
+ */
+export class UnsupportedTypeError extends Error {
+  constructor(readonly message: string) {
+      super(message);
+      this.name = "UnsupportedTypeError";
   }
 }
