@@ -1,6 +1,5 @@
 import { describe, expect, it } from "@jest/globals";
-import { Err, IO, NonEmptyList, Ok } from "../src";
-import { ContinuationError } from "../src/io";
+import { Err, IO, NonEmptyList, Ok, SequenceError } from "../src";
 
 describe("IO", () => {
   describe("of", () => {
@@ -434,7 +433,9 @@ describe("IO", () => {
       });
 
       expect(IO.isErr(result)).toBe(true);
-      expect((result as Err<Error>).error).toBeInstanceOf(ContinuationError);
+      const seqErr = (result as Err<Error>).error as SequenceError<Error>;
+
+      expect(seqErr.error).toBe("fail");
     });
   });
 });

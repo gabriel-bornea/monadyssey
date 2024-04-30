@@ -854,7 +854,7 @@ export class IO<E, A> {
           case "Ok":
             return result.value;
           case "Err":
-            throw new ContinuationError(result.error);
+            throw new SequenceError(result.error);
           default:
             throw new UnsupportedTypeError("`bind` can be used only on `IO` operations");
         }
@@ -884,10 +884,10 @@ export class IO<E, A> {
  *
  * @extends Error
  */
-export class ContinuationError<E> extends Error {
+export class SequenceError<E> extends Error {
   constructor(readonly error: E) {
     super();
-    this.name = "ContinuationError";
+    this.name = "SequenceError";
   }
 }
 
