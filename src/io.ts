@@ -832,7 +832,6 @@ export class IO<E, A> {
    *          before it resolves.
    *
    * @example
-   * // Assuming IO.ofSync is defined properly to wrap synchronous code into an IO monad.
    * const calculateSum = IO.forM(async bind => {
    *   const one = await bind(IO.ofSync(() => 1));
    *   const two = await bind(IO.ofSync(() => 2));
