@@ -901,7 +901,7 @@ export class ContinuationError<E> extends Error {
  */
 export class UnsupportedTypeError extends Error {
   constructor(readonly message: string) {
-      super(message);
-      this.name = "UnsupportedTypeError";
+    super(message);
+    this.name = "UnsupportedTypeError";
   }
 }
