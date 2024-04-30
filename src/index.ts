@@ -6,3 +6,4 @@ export { Schedule, RepeatError, PolicyValidationError, TimeoutError, RetryError 
 export type { Policy } from "./schedule.ts";
 export type { Either } from "./either.ts";
 export { Left, Right } from "./either.ts";
+export type { SequenceError } from "./io.ts";

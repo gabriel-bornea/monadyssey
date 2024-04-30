@@ -99,9 +99,10 @@ that may result in a success (`Ok<A>`) or an error (`Err<E>`).
 
 * `zip2(f1, f2)`, `zip3(f1, f2, f3)`: Combines multiple IO operations into a single operation, executing them in parallel.
 
-### Either<A, B>
+### `Either<A, B>`
 
-The `Either<A, B>` interface represents a value of one of two possible types: a failure (`Left<A>`) or a success (`Right<B>`). It is typically used for error handling without exceptions.
+The `Either<A, B>` interface represents a value of one of two possible types: a failure (`Left<A>`) or a success (`Right<B>`). 
+It is typically used for error handling without exceptions.
 
 *Factory Methods*:
 
@@ -117,28 +118,14 @@ The `Either<A, B>` interface represents a value of one of two possible types: a 
 * `tap(action: (b: B) => void): Either<A, B>`: Executes a function on the Right value, returning the original Either.
 * `tapLeft(action: (a: A) => void): Either<A, B>`: Executes a function on the Left value, returning the original Either.
 
-*Usage Examples*:
-
-```typescript
-const processInput = (input: string): Either<Error, number> =>
-  input.match(/^\d+$/) ? Right.of(parseInt(input)) : Left.of(new Error("Invalid input"));
-
-const result = processInput("123")
-  .map(x => x * 2)
-  .fold(
-    err => err.message,
-    val => `Processed value: ${val}`
-  );
-
-console.log(result); // "Processed value: 246"
-```
-
 ### Usage
 This library is designed to be used in TypeScript applications where functional programming patterns 
 are preferred for managing asynchronous operations, ensuring safety from empty lists, and handling 
 errors in a structured way.
 
 ### Examples
-To see specific examples of how to use each component, please refer to the method descriptions 
-and comments within the source code.
+To provide a clearer understanding of how to effectively use each component of our library, we will soon add 
+detailed real-world examples. These examples will demonstrate practical applications, showcasing step-by-step 
+usage in common scenarios. For immediate guidance, please refer to the method descriptions and inline comments 
+within the source code, which are designed to help you get started.
 

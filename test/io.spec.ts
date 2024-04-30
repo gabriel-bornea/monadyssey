@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@jest/globals";
-import { Err, IO, NonEmptyList, Ok } from "../src";
+import { Err, IO, NonEmptyList, Ok, SequenceError } from "../src";
 
 describe("IO", () => {
   describe("of", () => {
@@ -95,6 +95,20 @@ describe("IO", () => {
       const mapped = effect.map((num) => num * 2);
 
       expect(await mapped.runAsync()).toEqual({ type: "Ok", value: 6 });
+    });
+
+    it("should lazily execute the operation", async () => {
+      let sideEffect = false;
+
+      const effect = IO.ofSync(() => 3);
+      const mapped = effect.map((num) => {
+        sideEffect = true;
+        return num * 2;
+      });
+
+      expect(sideEffect).toBe(false);
+      await mapped.runAsync();
+      expect(sideEffect).toBe(true);
     });
   });
 
@@ -392,6 +406,64 @@ describe("IO", () => {
       const rightSide = await m.flatMap((x) => f(x).flatMap(g)).runAsync();
 
       expect(leftSide).toEqual(rightSide);
+    });
+  });
+
+  describe("forM", () => {
+    it("should bind multiple operations", async () => {
+      const result = await IO.forM(async (bind) => {
+        const one = await bind(IO.ofSync(() => 1));
+        const two = await bind(IO.ofSync(() => 2));
+        const three = await bind(IO.ofSync(() => 3));
+
+        return one + two + three;
+      }).runAsync();
+
+      expect(IO.isOk(result)).toBe(true);
+      expect((result as Ok<number>).value).toBe(6);
+    });
+
+    it("should short-circuit the computation on error", async () => {
+      const result = await IO.forM(async (bind) => {
+        const one = await bind(IO.ofSync(() => 1));
+        await bind(IO.failed("fail"));
+        const two = await bind(IO.ofSync(() => 2));
+
+        return one + two;
+      }).runAsync();
+
+      expect(IO.isErr(result)).toBe(true);
+      const seqErr = (result as Err<Error>).error as SequenceError<Error>;
+
+      expect(seqErr.error).toBe("fail");
+    });
+
+    it("should execute the operation lazy", async () => {
+      let sharedState = 0;
+
+      const effectOne = IO.ofSync(() => {
+        sharedState += 1;
+        return sharedState;
+      });
+
+      const effectTwo = IO.ofSync(() => {
+        sharedState += 2;
+        return sharedState;
+      });
+
+      const effect = IO.forM(async (bind) => {
+        const one = await bind(effectOne);
+        const two = await bind(effectTwo);
+
+        return one + two;
+      });
+
+      expect(sharedState).toBe(0);
+
+      const result = await effect.getOrNull();
+
+      expect(sharedState).toBe(3);
+      expect(result).toBe(4);
     });
   });
 });

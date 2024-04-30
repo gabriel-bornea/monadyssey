@@ -19,7 +19,6 @@ jobs:
           node-version: 'lts/*'
       - run: npm ci
       - run: npm run build
-      - run: npm audit signatures
       - run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}

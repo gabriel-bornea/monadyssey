@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { NonEmptyList } from "./non-empty-list.ts";
+import { Experimental } from "./decorators.ts";
 
 /**
  * Represents a successful outcome of an operation.
@@ -811,4 +812,64 @@ export class IO<E, A> {
     }
     return result;
   };
+
+  /**
+   * Performs a monadic bind over a sequence of IO operations encapsulated in an `IO` monad.
+   * This function abstracts the complexity of chaining and error management of IO operations,
+   * allowing for a declarative style of programming. This method is experimental and may
+   * change in future releases.
+   *
+   * @template E - The error type that can be returned in case of failure.
+   * @template A - The result type of the successful execution of the `operation`.
+   * @param {function(bind: <B>(effect: IO<E, B>) => Promise<B>): Promise<A>} operation -
+   *        A function that takes a `bind` function and returns a `Promise`. The `bind` function
+   *        is used to execute `IO` operations sequentially. `operation` should utilize `bind`
+   *        to chain together several `IO` operations and compute a final result based on their
+   *        successful execution.
+   * @returns {IO<E, A>} An IO that resolves to either an error `E`,
+   *          if any of the IO operations fail, or a success with value `A`, if all operations
+   *          complete successfully. The method ensures that all started operations are completed
+   *          before it resolves.
+   *
+   * @example
+   * const sum = IO.forM(async bind => {
+   *   const one = await bind(IO.ofSync(() => 1));
+   *   const two = await bind(IO.ofSync(() => 2));
+   *   const three = await bind(IO.ofSync(() => 3));
+   *   return one + two + three;
+   * });
+   */
+  @Experimental()
+  static forM<E, A>(operation: (bind: <B>(effect: IO<E, B>) => Promise<B>) => Promise<A>): IO<E, A> {
+    const bind = async <B>(eff: IO<E, B>): Promise<B> => {
+      return eff.runAsync().then((result) => {
+        switch (result.type) {
+          case "Ok":
+            return result.value;
+          case "Err":
+            throw new SequenceError(result.error);
+        }
+      });
+    };
+
+    return IO.of(() => operation(bind));
+  }
+}
+
+/**
+ * Represents errors that occur during the continuation of operations, especially
+ * within monadic bind operations or asynchronous chains where continuation
+ * semantics are violated or cannot be executed due to some failure conditions.
+ *
+ * This error class is typically used in scenarios where a sequence of operations
+ * needs strict error handling and where each step's execution is contingent upon
+ * the successful completion of the previous one.
+ *
+ * @extends Error
+ */
+export class SequenceError<E> extends Error {
+  constructor(readonly error: E) {
+    super();
+    this.name = "SequenceError";
+  }
 }
