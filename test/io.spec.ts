@@ -417,7 +417,7 @@ describe("IO", () => {
         const three = await bind(IO.ofSync(() => 3));
 
         return one + two + three;
-      });
+      }).runAsync();
 
       expect(IO.isOk(result)).toBe(true);
       expect((result as Ok<number>).value).toBe(6);
@@ -430,12 +430,40 @@ describe("IO", () => {
         const two = await bind(IO.ofSync(() => 2));
 
         return one + two;
-      });
+      }).runAsync();
 
       expect(IO.isErr(result)).toBe(true);
       const seqErr = (result as Err<Error>).error as SequenceError<Error>;
 
       expect(seqErr.error).toBe("fail");
+    });
+
+    it("should execute the operation lazy", async () => {
+      let sharedState = 0;
+
+      const effectOne = IO.ofSync(() => {
+        sharedState += 1;
+        return sharedState;
+      });
+
+      const effectTwo = IO.ofSync(() => {
+        sharedState += 2;
+        return sharedState;
+      });
+
+      const effect = IO.forM(async (bind) => {
+        const one = await bind(effectOne);
+        const two = await bind(effectTwo);
+
+        return one + two;
+      });
+
+      expect(sharedState).toBe(0);
+
+      const result = await effect.getOrNull();
+
+      expect(sharedState).toBe(3);
+      expect(result).toBe(4);
     });
   });
 });

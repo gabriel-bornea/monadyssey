@@ -826,49 +826,33 @@ export class IO<E, A> {
    *        is used to execute `IO` operations sequentially. `operation` should utilize `bind`
    *        to chain together several `IO` operations and compute a final result based on their
    *        successful execution.
-   * @returns {Promise<Err<E> | Ok<A>>} A promise that resolves to either an `Err` with an error `E`,
-   *          if any of the IO operations fail, or an `Ok` with value `A`, if all operations
+   * @returns {IO<E, A>} An IO that resolves to either an error `E`,
+   *          if any of the IO operations fail, or a success with value `A`, if all operations
    *          complete successfully. The method ensures that all started operations are completed
    *          before it resolves.
    *
    * @example
-   * const calculateSum = IO.forM(async bind => {
+   * const sum = IO.forM(async bind => {
    *   const one = await bind(IO.ofSync(() => 1));
    *   const two = await bind(IO.ofSync(() => 2));
    *   const three = await bind(IO.ofSync(() => 3));
-   *   return one + two + three;  // Returns Ok(6) if all operations are successful.
+   *   return one + two + three;
    * });
-   *
-   * calculateSum.then(result => console.log(result)); // Expected output: Ok(6)
    */
   @Experimental()
-  static async forM<E, A>(
-    operation: (bind: <B>(effect: IO<E, B>) => Promise<B>) => Promise<A>
-  ): Promise<Err<E> | Ok<A>> {
-    const operations: Array<Promise<any>> = [];
-
+  static forM<E, A>(operation: (bind: <B>(effect: IO<E, B>) => Promise<B>) => Promise<A>): IO<E, A> {
     const bind = async <B>(eff: IO<E, B>): Promise<B> => {
-      const operation = eff.runAsync().then((result) => {
+      return eff.runAsync().then((result) => {
         switch (result.type) {
           case "Ok":
             return result.value;
           case "Err":
             throw new SequenceError(result.error);
-          default:
-            throw new UnsupportedTypeError("`bind` can be used only on `IO` operations");
         }
       });
-      operations.push(operation);
-      return operation;
     };
 
-    try {
-      const result = await operation(bind);
-      await Promise.all(operations);
-      return IO.ok(result);
-    } catch (error) {
-      return IO.err(error as E);
-    }
+    return IO.of(() => operation(bind));
   }
 }
 
@@ -887,20 +871,5 @@ export class SequenceError<E> extends Error {
   constructor(readonly error: E) {
     super();
     this.name = "SequenceError";
-  }
-}
-
-/**
- * Represents an error for unsupported types used in operations where only specific types are allowed.
- * This custom error class extends the standard Error class and provides a specific error name
- * to distinguish it from other types of errors.
- *
- * @class UnsupportedTypeError
- * @extends {Error}
- */
-export class UnsupportedTypeError extends Error {
-  constructor(readonly message: string) {
-    super(message);
-    this.name = "UnsupportedTypeError";
   }
 }
