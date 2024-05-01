@@ -1,108 +1,13 @@
+import { identity } from "./utils.ts";
+
 /**
- * Represents an optional value: every Option is either Some and contains a value, or None and does not.
+ * Represents an optional value. Every `Option<A>` is either `Some<A>` containing a value or `None` representing absence of value.
+ * This interface supports operations like map, flatMap, and facilitates exhaustive type-checking through type narrowing.
  * @typeParam A - The type of the element contained within a `Some`.
  */
-export interface Option<A> {
-  type: "Some" | "None";
+export abstract class Option<A> {
+  abstract type: "Some" | "None";
 
-  map<B>(f: (value: A) => B): Option<B>;
-
-  flatMap<B>(f: (value: A) => Option<B>): Option<B>;
-}
-
-interface OptionContract<A> {
-
-  /**
-   * Function description for `map` that applies to both Some and None.
-   * @param f - A transformation function to apply to the contained value (if any).
-   * @returns An Option containing the transformed value or None if there is no value.
-   * @example
-   * const some = Some.of(5);
-   * const mappedSome = some.map(x => x + 1);  // Returns Some(6)
-   * const none = None.Instance;
-   * const mappedNone = none.map(x => x + 1);  // Returns None
-   */
-  map<B>(f: (value: A) => B): Option<B>;
-}
-
-/**
- * Represents an Option that contains no value.
- */
-export class None implements OptionContract<never> {
-  readonly type: "None" = "None" as const;
-  private static readonly instance: None = new None();
-
-  /**
-   * Returns the singleton instance of `None`.
-   */
-  static get Instance() {
-    return None.instance;
-  }
-
-  /**
-   * @param _
-   * @type {f: (value: A) => B): Option<B>}
-   */
-  map<B>(_: (value: never) => B): Option<B> {
-    return None.instance;
-  }
-
-  /**
-   * Always returns `None` since there is no value to transform into another Option.
-   * @param _ - A function that would transform a value into an Option if it existed.
-   * @returns The singleton `None` instance.
-   */
-  flatMap<B>(_: (value: never) => Option<B>): Option<B> {
-    return None.instance;
-  }
-}
-
-/**
- * Represents an Option carrying a value.
- */
-export class Some<A> implements OptionContract<A> {
-  readonly type: "Some" = "Some" as const;
-
-  /**
-   * Constructs a new `Some` instance that includes the provided value.
-   * @param value - The value to wrap.
-   */
-  private constructor(public readonly value: A) {
-  }
-
-  /**
-   * Creates a new `Some` instance containing the given value.
-   * @param value - The value to wrap.
-   * @returns A `Some` instance containing the value.
-   * @typeParam A - The type of the element to wrap.
-   */
-  static of<A>(value: A): Some<A> {
-    return new Some<A>(value);
-  }
-
-  map<B>(f: (value: A) => B): Option<B> {
-    return Some.of(f(this.value));
-  }
-
-  /**
-   * Applies a function to the contained value and returns the result, which must be an Option.
-   * @param f - A function that transforms the contained value into an Option.
-   * @returns The result of applying the function.
-   * @typeParam B - The type of the element inside the returned Option.
-   */
-  flatMap<B>(f: (value: A) => Option<B>): Option<B> {
-    return f(this.value);
-  }
-}
-
-/**
- * Namespace for factory functions for creating `Some` and `None` instances and for working with optional values.
- */
-const Option = {
-  Some<A>(value: A): Some<A> {
-    return Some.of(value);
-  },
-  None: None.Instance,
   /**
    * Creates an Option instance from a value that may be null or undefined.
    * If the value is null or undefined, Option.None is returned.
@@ -110,26 +15,193 @@ const Option = {
    *
    * @param {A | null | undefined} value - The value to create the Option instance from.
    * @returns {Option<A>} - The created Option instance.
+   * @example
+   * const maybeNumber = Option.ofNullable(5); // Returns Some(5)
+   * const maybeNull = Option.ofNullable(null); // Returns None
    */
-  ofNullable<A>(value: A | null | undefined): Option<A> {
-    return value === null || value === undefined ? Option.None : Option.Some(value);
-  },
-};
+  static ofNullable<A>(value: A | null | undefined): Option<A> {
+    return value === null || value === undefined ? None.Instance : Some.of(value);
+  }
 
-/**
- * Function to handle options and return a string based on the option type.
- * @param o - The option to handle.
- * @returns A string indicating the content of the option or "n/a" if None.
- */
-function handleOption(o: Option<string>) {
-  o.map(s => s.length);
-  switch (o.type) {
-  case "None":
-    return "n/a";
-  case "Some":
-    return o.value;
+  /**
+   * Property to access the actual `Option` instance, enabling exhaustive type checking and type narrowing.
+   * Use this when a switch statement needs to handle each subtype distinctly.
+   *
+   * @example
+   * function getLength(text: Option<string>): number {
+   *   switch (text.self.type) {
+   *     case "Some":
+   *       // Type narrowing allows direct access to the `value`.
+   *       return text.self.value.length;
+   *     case "None":
+   *       return 0;
+   *   }
+   * }
+   */
+  abstract self: None | Some<A>;
+
+  /**
+   * Transforms the `Option`'s value using a provided function, returning a new `Option` with the result.
+   * If the `Option` is `None`, it returns `None`.
+   * @example
+   * const numberOption = Option.Some(5);
+   * const incrementedOption = numberOption.map(x => x + 1); // Returns Some(6)
+   */
+  map<B>(f: (value: A) => B): Option<B> {
+    return this.flatMap(value => Some.of(f(value)));
+  }
+
+  /**
+   * Applies a function that returns an `Option` to the `Option`'s value, if it exists, and flattens the result.
+   * If the `Option` is `None`, it returns `None`.
+   * @example
+   * const numberOption = Option.Some(5);
+   * const nestedOption = numberOption.flatMap(x => Option.Some(x + 1)); // Returns Some(6)
+   */
+  abstract flatMap<B>(f: (value: A) => Option<B>): Option<B>;
+
+  /**
+   * Executes a provided function if this `Option` is a `Some`, typically used for side effects.
+   * Returns the original `Option` instance to facilitate method chaining.
+   * @example
+   * Option.Some(5).tap(value => console.log(value)); // Logs "5"
+   * Option.None.tap(value => console.log(value)); // Does nothing
+   */
+  abstract tap(f: (value: A) => void): Option<A>;
+
+  /**
+   * Executes a provided function if this `Option` is a `None`, typically used for side effects.
+   * Returns the original `Option` instance to facilitate method chaining.
+   * @example
+   * Option.Some(5).tapNone(() => console.log("No value")); // Does nothing
+   * Option.None.tapNone(() => console.log("No value")); // Logs "No value"
+   */
+  abstract tapNone(f: () => void): Option<A>;
+
+  /**
+   * Applies one of two provided functions based on the contents of this `Option`.
+   * If it is `None`, it applies `ifNone`. If it is `Some`, it applies `ifSome`.
+   * @returns The result of the applied function.
+   * @example
+   * const result = Option.Some(5).fold(
+   *   () => 'No value',
+   *   value => 'Value is ' + value
+   * ); // Returns 'Value is 5'
+   */
+  abstract fold<B>(ifNone: () => B, ifSome: (value: A) => B): B;
+
+  /**
+   * Returns the contained value if `Some`, otherwise returns `null`.
+   * @example
+   * const value = Option.Some(5).getOrNull(); // Returns 5
+   * const empty = Option.None.getOrNull(); // Returns null
+   */
+  getOrNull(): A | null {
+    return this.fold(() => null, identity);
+  }
+
+  /**
+   * Returns the contained value if `Some`, otherwise returns the provided default value.
+   * @example
+   * const value = Option.Some(5).getOrElse(() => 10); // Returns 5
+   * const empty = Option.None.getOrElse(() => 10); // Returns 10
+   */
+  getOrElse(defaultValue: () => A): A {
+    return this.fold(() => defaultValue(), identity);
   }
 }
 
-const a = Option.ofNullable("test").fla;
+/**
+ * Represents an Option that contains no value.
+ */
+export class None extends Option<never> {
+  readonly type = "None" as const;
+  readonly self = this;
+  private static readonly instance: None = new None();
 
+  private constructor() {
+    super();
+  }
+
+  /**
+   * Returns the singleton instance of `None`.
+   * @example
+   * const emptyOption = None.Instance;
+   */
+  static get Instance() {
+    return None.instance;
+  }
+
+  flatMap<B>(_: (value: never) => Option<B>): Option<B> {
+    return this;
+  }
+
+  fold<B>(ifNone: () => B, _: (right: never) => B): B {
+    return ifNone();
+  }
+
+  getOrElse(defaultValue: () => never): never {
+    return defaultValue();
+  }
+
+  getOrNull(): null {
+    return null;
+  }
+
+  tap(_: (value: never) => void): Option<never> {
+    return this;
+  }
+
+  tapNone(f: () => void): Option<never> {
+    f();
+    return this;
+  }
+}
+
+/**
+ * Represents an Option carrying a value.
+ */
+export class Some<A> extends Option<A> {
+  readonly type = "Some" as const;
+  readonly self = this;
+
+  private constructor(public readonly value: A) {
+    super();
+  }
+
+  /**
+   * Creates a new `Some` instance containing the given value.
+   * @param value - The value to wrap.
+   * @returns A `Some` instance containing the value.
+   * @example
+   * const someOption = Some.of(10);
+   */
+  static of<A>(value: A): Some<A> {
+    return new Some<A>(value);
+  }
+
+  flatMap<B>(f: (value: A) => Option<B>): Option<B> {
+    return f(this.value);
+  }
+
+  fold<B>(_: () => B, ifSome: (right: A) => B): B {
+    return ifSome(this.value);
+  }
+
+  getOrElse(_: () => A): A {
+    return this.value;
+  }
+
+  getOrNull(): A {
+    return this.value;
+  }
+
+  tap(f: (value: A) => void): Option<A> {
+    f(this.value);
+    return this;
+  }
+
+  tapNone(_: () => void): Option<A> {
+    return this;
+  }
+}
