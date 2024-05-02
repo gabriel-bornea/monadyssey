@@ -13,6 +13,7 @@ coverage
 results
 dist-ssr
 *.local
+test/*.spec.js
 
 # Editor directories and files
 .vscode/*
