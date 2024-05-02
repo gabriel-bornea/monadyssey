@@ -1,3 +1,11 @@
+# [1.3.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.2.0...v1.3.0) (2024-05-02)
+
+
+### Features
+
+* Monadic for `forM` over a sequence of IO operations encapsulated in an `IO` monad. ([#25](https://github.com/gabriel-bornea/monadyssey/issues/25)) ([a28bb01](https://github.com/gabriel-bornea/monadyssey/commit/a28bb017431b6fb70a39d0dc60037abfb0fcde8b))
+* Option data type ([#26](https://github.com/gabriel-bornea/monadyssey/issues/26)) ([2326975](https://github.com/gabriel-bornea/monadyssey/commit/2326975c06c154147024e387ccf1530828e09f68))
+
 # [1.2.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.1.0...v1.2.0) (2024-04-28)
 
 
