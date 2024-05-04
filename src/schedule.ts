@@ -1,4 +1,5 @@
 import { IO } from "./io.ts";
+import { Experimental } from "./decorators.ts";
 
 /**
  * Represents a scheduling policy with configurable retries, delay factor, initial delay, and optional timeout.
@@ -104,7 +105,8 @@ export class Schedule {
    *   }
    * });
    */
-  retryIf = <E, A>(f: () => IO<E, A>, condition: () => boolean, liftE: (error: Error) => E): IO<E, A> => {
+  @Experimental()
+  retryIf<E, A>(f: () => IO<E, A>, condition: () => boolean, liftE: (error: Error) => E): IO<E, A> {
     const policy = this.policy;
     return IO.of<E, A>(async () => {
       let attempt = 0;
@@ -128,7 +130,7 @@ export class Schedule {
 
       throw new RetryError("Retry limit reached without success");
     });
-  };
+  }
 
   /**
    * Repeats the execution of an IO action based on a defined scheduling policy.
@@ -159,6 +161,7 @@ export class Schedule {
    *   }
    * });
    */
+  @Experimental()
   repeat<E, A>(f: () => IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
     const policy = this.policy;
 
@@ -218,7 +221,8 @@ export class Schedule {
    *     }
    *   });
    */
-  withTimeout = <E, A>(f: () => IO<E, A>, liftE: (error: Error) => E): IO<E, A> => {
+  @Experimental()
+  withTimeout<E, A>(f: () => IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
     const timeout = this.policy.timeout;
     if (!timeout || timeout < 1) {
       return f();
@@ -259,7 +263,7 @@ export class Schedule {
         }),
       ]);
     });
-  };
+  }
 }
 
 /**

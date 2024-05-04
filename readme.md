@@ -18,10 +18,6 @@ handling, allowing developers to focus on business logic rather than control flo
 
 ### Key Components
 
-* __Non-Empty Lists__: Recognizing the common pitfall of empty list handling, monadyssey introduces the 
-NonEmptyList type. This guarantees at compile-time that a list contains at least one element, 
-eliminating a class of runtime errors and simplifying list operations by removing the need to 
-check for list emptiness.
 * __Retryable Asynchronous Operations__: Asynchronous operations are a cornerstone of modern application 
 development, but they often require complex retry logic to handle transient failures gracefully. 
 `monadyssey` provides a `Schedule` class, paired with a Policy configuration, to declaratively manage 

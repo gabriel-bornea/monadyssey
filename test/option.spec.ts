@@ -35,7 +35,7 @@ describe("Option", () => {
       const option: Option<number> = Some.of(5);
       const result = option.fold(
         () => "No value",
-        (value) => `Value is ${value}`,
+        (value) => `Value is ${value}`
       );
       expect(result).toBe("Value is 5");
     });
@@ -44,7 +44,7 @@ describe("Option", () => {
       const option: Option<number> = None.Instance;
       const result = option.fold(
         () => "No value",
-        (value) => `Value is ${value}`,
+        (value) => `Value is ${value}`
       );
       expect(result).toBe("No value");
     });

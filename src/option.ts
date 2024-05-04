@@ -48,7 +48,7 @@ export abstract class Option<A> {
    * const incrementedOption = numberOption.map(x => x + 1); // Returns Some(6)
    */
   map<B>(f: (value: A) => B): Option<B> {
-    return this.flatMap(value => Some.of(f(value)));
+    return this.flatMap((value) => Some.of(f(value)));
   }
 
   /**
