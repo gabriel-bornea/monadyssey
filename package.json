@@ -23,7 +23,7 @@
   "exports": {
     ".": {
       "import": "./dist/monadyssey.js",
-      "require": "./dist/monadyssey.umd.js"
+      "require": "./dist/monadyssey.umd.cjs"
     }
   },
   "scripts": {

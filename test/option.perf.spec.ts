@@ -23,7 +23,7 @@ describe("Option simulation", () => {
   });
 
   it("Some.flatMap with None", () => {
-    perf("flatMap with None", () => Some.of(50).flatMap(_ => None.Instance));
+    perf("flatMap with None", () => Some.of(50).flatMap((_) => None.Instance));
   });
 
   it("Some.tap", () => {
@@ -43,7 +43,7 @@ describe("Option simulation", () => {
   });
 
   it("None.flatMap with None", () => {
-    perf("flatMap with None", () => None.Instance.flatMap(_ => None.Instance));
+    perf("flatMap with None", () => None.Instance.flatMap((_) => None.Instance));
   });
 
   it("None.tap", () => {
