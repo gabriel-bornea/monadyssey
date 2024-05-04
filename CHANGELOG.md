@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/gabriel-bornea/monadyssey/compare/v1.3.0...v1.3.1) (2024-05-04)
+
+
+### Bug Fixes
+
+* Experimental decorator added to schedule methods and resolved minor code syntax issues. Required format for the package build was adjusted in the package.json file. ([#28](https://github.com/gabriel-bornea/monadyssey/issues/28)) ([316f64f](https://github.com/gabriel-bornea/monadyssey/commit/316f64f1dbf85efd2c35be9a2b3297f0a1510581))
+
 # [1.3.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.2.0...v1.3.0) (2024-05-02)
 
 
