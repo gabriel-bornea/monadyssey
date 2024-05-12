@@ -2,7 +2,98 @@
  * Represents a type which is either a Left (failure) or a Right (success).
  * Left typically stores an error or failure state, while Right stores a success value.
  */
-export interface Either<A, B> {
+export abstract class Either<A, B> {
+  abstract type: "Left" | "Right";
+
+  /**
+   * Property to access the actual `Either` instance, enabling exhaustive type checking and type narrowing.
+   * Use this when a switch statement needs to handle each subtype distinctly.
+   *
+   * @example
+   * function isAlive(cat: Either<"dead", "alive">): boolean {
+   *   // switch is exhaustive without a default branch
+   *   switch (cat.self.value) {
+   *   case "dead":
+   *     return false;
+   *   case "alive":
+   *     return true;
+   *   }
+   * }
+   */
+  abstract self: Left<A> | Right<B>;
+
+  /**
+   * Catch function with automatic conversion to Either<string, B>.
+   * This version is used when no transformation function is provided.
+   * It captures exceptions, converts them to a string, and wraps them in a Left.
+   * If the operation is successful, the result is wrapped in a Right.
+   *
+   * @param fn - A function that might throw an error.
+   * @returns {Either<string, B>} - Either an error message as a string or the successful result.
+   *
+   * @example
+   * function gambleWithFailure() {
+   *   if (Math.random() > 0.5) {
+   *     throw "Something went wrong";
+   *   }
+   *   return "Success";
+   * }
+   *
+   * const result = Either.catch(gambleWithFailure); // Left<string>("Something went wrong") | Right<string>("Success")
+   */
+  static catch<B>(fn: () => B): Either<string, B>;
+
+  /**
+   * Catch function with a custom transformation from unknown to A.
+   * This version provides maximum flexibility, allowing any type of caught error to be transformed into type A.
+   *
+   * @param fn - A function that might throw an error.
+   * @param liftE - A function that takes an unknown error and returns type A.
+   * @returns {Either<A, B>} - Either the transformed error or the successful result.
+   *
+   * @example
+   * function gambleWithFailure() {
+   *   if (Math.random() > 0.5) {
+   *     throw "Something went wrong";
+   *   }
+   *   return "Success";
+   * }
+   *
+   * type MyError =
+   *   | "GAMBLE_FAILED"
+   *   | "UNKNOWN_FAILURE"
+   *
+   * const result2 = Either.catch(gambleWithFailure, (e: unknown): MyError => {
+   *   if (typeof e === "string") {
+   *     return "GAMBLE_FAILED";
+   *   } else {
+   *     return "UNKNOWN_FAILURE";
+   *   }
+   * });
+   */
+  static catch<A, B>(fn: () => B, liftE: (e: unknown) => A): Either<A, B>;
+
+  static catch<A, B>(fn: () => B, liftE?: (e: unknown) => A): Left<string> | Left<A> | Right<B> {
+    try {
+      return Right.of(fn());
+    } catch (e: unknown) {
+      if (liftE) {
+        return Left.of(liftE(e));
+      }
+
+      const defaultLiftE = (e: unknown): string => {
+        if (typeof e === "string") {
+          return e;
+        } else if (e && typeof (e as any).message === "string") {
+          return (e as { message: string }).message;
+        } else {
+          return String(e);
+        }
+      };
+      return Left.of(defaultLiftE(e));
+    }
+  }
+
   /**
    * Transforms the right value of this Either by applying a function and returns a new Either.
    * @param f - A transformation function to apply to the right value.
@@ -10,7 +101,7 @@ export interface Either<A, B> {
    * @example
    * const result = Right.of(5).map(x => x * 2); // Returns Right(10)
    */
-  map<C>(f: (right: B) => C): Either<A, C>;
+  abstract map<C>(f: (right: B) => C): Either<A, C>;
 
   /**
    * Transforms the left value of this Either by applying a function and returns a new Either.
@@ -19,7 +110,7 @@ export interface Either<A, B> {
    * @example
    * const result = Left.of(5).mapLeft(x => x * 2); // Returns Left(10)
    */
-  mapLeft<C>(f: (left: A) => C): Either<C, B>;
+  abstract mapLeft<C>(f: (left: A) => C): Either<C, B>;
 
   /**
    * Applies a transformation function to the right value that returns an Either,
@@ -29,7 +120,7 @@ export interface Either<A, B> {
    * @example
    * const result = Right.of(5).flatMap(x => Right.of(x * 2)); // Returns Right(10)
    */
-  flatMap<C>(f: (right: B) => Either<A, C>): Either<A, C>;
+  abstract flatMap<C>(f: (right: B) => Either<A, C>): Either<A, C>;
 
   /**
    * Applies one of two provided functions based on the contents of this Either.
@@ -42,7 +133,7 @@ export interface Either<A, B> {
    *   value => 'Success with ' + value
    * ); // Returns 'Success with 5'
    */
-  fold<C>(ifLeft: (left: A) => C, ifRight: (right: B) => C): C;
+  abstract fold<C>(ifLeft: (left: A) => C, ifRight: (right: B) => C): C;
 
   /**
    * Executes a provided function if this is a Right, used for side effects.
@@ -51,7 +142,7 @@ export interface Either<A, B> {
    * @example
    * Right.of(5).onRight(value => console.log(value)); // Logs "5"
    */
-  tap(action: (right: B) => void): Either<A, B>;
+  abstract tap(action: (right: B) => void): Either<A, B>;
 
   /**
    * Executes a provided function if this is a Left, used for side effects.
@@ -60,11 +151,17 @@ export interface Either<A, B> {
    * @example
    * Left.of('Error').onLeft(err => console.log(err)); // Logs "Error"
    */
-  tapLeft(action: (left: A) => void): Either<A, B>;
+  abstract tapLeft(action: (left: A) => void): Either<A, B>;
 }
 
-export class Left<A> implements Either<A, never> {
-  private constructor(public readonly value: A) {}
+export class Left<A> extends Either<A, never> {
+  readonly type = "Left" as const;
+
+  self: Left<A> = this;
+
+  private constructor(public readonly value: A) {
+    super();
+  }
 
   static of<A>(value: A): Left<A> {
     return new Left<A>(value);
@@ -96,8 +193,14 @@ export class Left<A> implements Either<A, never> {
   }
 }
 
-export class Right<B> implements Either<never, B> {
-  private constructor(public readonly value: B) {}
+export class Right<B> extends Either<never, B> {
+  readonly type = "Right" as const;
+
+  self: Right<B> = this;
+
+  private constructor(public readonly value: B) {
+    super();
+  }
 
   static of<B>(value: B): Right<B> {
     return new Right<B>(value);

@@ -2,6 +2,26 @@ import { describe, expect, it } from "@jest/globals";
 import { Option, Some, None } from "../src";
 
 describe("Option", () => {
+  describe("ofNullable", () => {
+    it("should be None for null", () => {
+      const option: Option<string> = Option.ofNullable<string>(null);
+
+      expect(option).toBe(None.Instance);
+    });
+
+    it("should be None for undefined", () => {
+      const option = Option.ofNullable<undefined>(undefined);
+
+      expect(option).toBe(None.Instance);
+    });
+
+    it("should be Some for actual value", () => {
+      const value: string = "I'm here.";
+      const option: Option<string> = Option.ofNullable(value);
+
+      expect(option).toEqual(Some.of("I'm here."));
+    });
+  });
   describe("map", () => {
     it("should transform the value of a Some instance", () => {
       const option: Option<number> = Some.of(5);
