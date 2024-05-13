@@ -2,6 +2,39 @@ import { describe, expect, it } from "@jest/globals";
 import { Either, Left, Right } from "../src";
 
 describe("Either", () => {
+  describe("catch", () => {
+    it("should convert thrown strings to Left<string>", () => {
+      const result = Either.catch(() => {
+        throw "Error message";
+      });
+      expect(result).toEqual(Left.of("Error message"));
+    });
+
+    it("should convert thrown Error to Left<string>", () => {
+      const result = Either.catch(() => {
+        throw Error("Error message");
+      });
+      expect(result).toEqual(Left.of("Error message"));
+    });
+
+    it("should convert thrown Error to Left<MyError>", () => {
+      type MyError = "EMPTY_NAME" | "UNKNOWN_FAILURE";
+
+      const name = "";
+
+      const result = Either.catch(
+        () => {
+          if (name.length === 0) {
+            throw Error("Name cannot be empty");
+          }
+        },
+        (_: unknown): MyError => "EMPTY_NAME"
+      );
+
+      expect(result).toEqual(Left.of("EMPTY_NAME"));
+    });
+  });
+
   describe("map", () => {
     it("should transform the right value of a Right instance", () => {
       const either: Either<string, number> = Right.of(5);
