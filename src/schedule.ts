@@ -52,6 +52,7 @@ export const defaultPolicy = (
  */
 export class Schedule {
   private readonly policy: Policy;
+  private cancelled: boolean = false;
 
   /**
    * Constructs a new Schedule instance.
@@ -112,7 +113,16 @@ export class Schedule {
       let attempt = 0;
       let delay = policy.delay;
 
+      let timeoutId: NodeJS.Timeout | null = null;
+
       while (condition() && attempt < policy.recurs) {
+        if (this.cancelled) {
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+          return Promise.reject(liftE(new CancellationError("Operation was cancelled")));
+        }
+
         const result = await this.withTimeout(f, liftE).runAsync();
 
         if (IO.isOk(result)) {
@@ -120,15 +130,21 @@ export class Schedule {
         }
 
         if (attempt >= policy.recurs - 1 || !condition()) {
-          throw result.error;
+          return Promise.reject(result.error);
         }
 
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        await new Promise((resolve) => {
+          timeoutId = setTimeout(resolve, delay);
+          if (this.cancelled) {
+            clearTimeout(timeoutId);
+            return Promise.reject(liftE(new CancellationError("Operation was cancelled")));
+          }
+        });
         delay *= policy.factor;
         attempt++;
       }
 
-      throw new RetryError("Retry limit reached without success");
+      return Promise.reject(liftE(new RetryError("Retry limit reached without success")));
     });
   }
 
@@ -164,22 +180,29 @@ export class Schedule {
   @Experimental()
   repeat<E, A>(f: () => IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
     const policy = this.policy;
+    let timeoutId: NodeJS.Timeout | null = null;
 
     return IO.of(async () => {
       let lastSuccessResult: A | null = null;
 
       for (let attempt = 0; attempt < policy.recurs; attempt++) {
+        if (this.cancelled) {
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+          return Promise.reject(liftE(new CancellationError("Operation was cancelled")));
+        }
+
         const result = await this.withTimeout(f, liftE).runAsync();
 
         if (IO.isOk(result)) {
           lastSuccessResult = result.value;
 
-          // if this is not the last attempt then delay
           if (attempt < policy.recurs - 1) {
-            await new Promise((resolve) => setTimeout(resolve, policy.delay));
+            await new Promise((resolve) => (timeoutId = setTimeout(resolve, policy.delay)));
           }
         } else {
-          throw new RepeatError(`Failed to execute repeat: ${result.error}`);
+          return Promise.reject(liftE(new RepeatError(`Failed to execute repeat: ${result.error}`)));
         }
       }
 
@@ -187,7 +210,7 @@ export class Schedule {
         return lastSuccessResult as A;
       }
 
-      throw new RepeatError("The function provided never succeeded");
+      return Promise.reject(liftE(new RepeatError("The function provided never succeeded")));
     });
   }
 
@@ -231,29 +254,37 @@ export class Schedule {
     return IO.of<E, A>(async () => {
       let timeoutId: NodeJS.Timeout | null = null;
       const timeoutError = liftE(new TimeoutError(`The operation timed out after ${timeout} milliseconds`));
-      // Promise that completes after the specified duration.
+
       const timeoutPromise = new Promise<A>((_, reject) => {
         timeoutId = setTimeout(() => {
           reject(timeoutError);
         }, timeout);
       });
 
-      // Promise that completes when the operation f finishes.
       const operationPromise = f()
         .runAsync()
         .then((result) => {
-          if (result.type === "Ok") {
-            return result.value;
-          } else {
-            throw result.error; // throw an error instead of returning it
+          switch (result.type) {
+            case "Ok":
+              return result.value;
+            case "Err":
+              return Promise.reject(result.error);
           }
         });
 
-      // Returns the promise that completes first: the operation or the timeout.
       return Promise.race([
         operationPromise
           .catch((error) => {
-            throw error;
+            const message = (e: unknown): string => {
+              if (typeof e === "string") {
+                return e;
+              } else if (e && typeof (e as any).message === "string") {
+                return (e as { message: string }).message;
+              } else {
+                return String(e);
+              }
+            };
+            return Promise.reject(new TimeoutError(message(error)));
           })
           .finally(() => {
             if (timeoutId) clearTimeout(timeoutId);
@@ -263,6 +294,28 @@ export class Schedule {
         }),
       ]);
     });
+  }
+
+  /**
+   * Cancels the ongoing scheduled operation. It should be used to stop the execution
+   * of scheduled operations in response to changing conditions or to free up resources.
+   *
+   * @example
+   * const schedule = new Schedule();
+   * const operation = () => IO.ofSync(() => performOperation());
+   * const retryCondition = () => true;
+   * const errorLifter = (error: Error) => new CustomError(error.message);
+   *
+   * const retryIO = schedule.retryIf(operation, retryCondition, errorLifter);
+   * // Cancel the operation after a short delay
+   * setTimeout(() => {
+   *   schedule.cancel();
+   * }, 150);
+   *
+   * const result = await retryIO.runAsync();
+   */
+  cancel(): void {
+    this.cancelled = true;
   }
 }
 
@@ -315,5 +368,18 @@ export class RepeatError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "RepeatError";
+  }
+}
+
+/**
+ * Represents an error that occurs when an operation is cancelled.
+ * This error is thrown when a scheduled operation is explicitly cancelled by the user.
+ *
+ * @extends Error
+ */
+export class CancellationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CancellationError";
   }
 }

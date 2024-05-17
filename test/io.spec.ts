@@ -409,6 +409,58 @@ describe("IO", () => {
     });
   });
 
+  describe("parZip", () => {
+    test("should successfully execute in parallel two operations", async () => {
+      const first = IO.ofSync(() => 1);
+      const second = IO.ofSync(() => "second");
+
+      await IO.parZip(first, second).fold(
+        () => fail(),
+        (result) => {
+          expect(result[0]).toBe(1);
+          expect(result[1]).toBe("second");
+        }
+      );
+    });
+
+    test("should successfully execute in parallel three operations", async () => {
+      const first = IO.ofSync(() => 1);
+      const second = IO.ofSync(() => "second");
+      const third = IO.ofSync(() => true);
+
+      await IO.parZip(first, second, third).fold(
+        () => fail(),
+        (result) => {
+          expect(result[0]).toBe(1);
+          expect(result[1]).toBe("second");
+          expect(result[2]).toBe(true);
+        }
+      );
+    });
+
+    test("should accumulate errors when executing in parallel two operation", async () => {
+      const first = IO.failed("error1");
+      const second = IO.failed("error2");
+
+      await IO.parZip(first, second).fold(
+        (errors) => expect(errors.size).toBe(2),
+        () => fail()
+      );
+    });
+
+    test("should accumulate errors when only some operations fail", async () => {
+      const first = IO.ofSync(() => 1);
+      const second = IO.failed("error2");
+      const third = IO.ofSync(() => 3);
+      const fourth = IO.failed("error4");
+
+      await IO.parZip(first, second, third, fourth).fold(
+        (err) => expect(err.size).toBe(2),
+        () => fail()
+      );
+    });
+  });
+
   describe("forM", () => {
     it("should bind multiple operations", async () => {
       const result = await IO.forM(async (bind) => {

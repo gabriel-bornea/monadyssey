@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { NonEmptyList } from "./non-empty-list.ts";
-import { Experimental } from "./decorators.ts";
+import { Deprecated, Experimental } from "./decorators.ts";
 
 /**
  * Represents a successful outcome of an operation.
@@ -492,8 +492,9 @@ export class IO<E, A> {
    * success, it yields an `Ok` with a tuple containing the results of `f1` and `f2`. On failure, it
    * yields an `Err` with a non-empty list of errors from `f1` and/or `f2`.
    */
-  static zip2 = <E, A, B>(f1: IO<E, A>, f2: IO<E, B>): IO<NonEmptyList<E>, [A, B]> =>
-    new IO(async () => {
+  @Deprecated("parZip")
+  static zip2<E, A, B>(f1: IO<E, A>, f2: IO<E, B>): IO<NonEmptyList<E>, [A, B]> {
+    return new IO(async () => {
       const results = await Promise.all([f1.runAsync(), f2.runAsync()]);
       if (results.every((result) => result.type === "Ok")) {
         const res = results as [Ok<A>, Ok<B>];
@@ -503,6 +504,7 @@ export class IO<E, A> {
         return IO.err(NonEmptyList.fromArray(errors));
       }
     });
+  }
 
   /**
    * Combines three `IO` operations into a single `IO` operation that, when executed, will run all
@@ -528,8 +530,9 @@ export class IO<E, A> {
    * success, it yields an `Ok` with a tuple containing the results of `f1`, `f2`, and `f3`. On failure,
    * it yields an `Err` with a non-empty list of errors from `f1`, `f2`, and/or `f3`.
    */
-  static zip3 = <E, A, B, C>(f1: IO<E, A>, f2: IO<E, B>, f3: IO<E, C>): IO<NonEmptyList<E>, [A, B, C]> =>
-    new IO(async () => {
+  @Deprecated("parZip")
+  static zip3<E, A, B, C>(f1: IO<E, A>, f2: IO<E, B>, f3: IO<E, C>): IO<NonEmptyList<E>, [A, B, C]> {
+    return new IO(async () => {
       const results = await Promise.all([f1.runAsync(), f2.runAsync(), f3.runAsync()]);
       if (results.every((result) => result.type === "Ok")) {
         const res = results as [Ok<A>, Ok<B>, Ok<C>];
@@ -539,6 +542,34 @@ export class IO<E, A> {
         return IO.err(NonEmptyList.fromArray(errors));
       }
     });
+  }
+
+  /**
+   * Combines multiple `IO` operations into a single `IO` operation that, when executed, will run all
+   * operations in parallel and encapsulate their results in a tuple. If the operations succeed, the
+   * resulting `IO` instance will contain an `Ok` with a tuple of the results. If one or more operations
+   * fail, the resulting `IO` instance will contain an `Err` with a non-empty list of errors.
+   *
+   * @template E - The type of the error.
+   * @template T - A tuple type representing the types of the values contained in each IO instance.
+   * @param {...{[K in keyof T]: IO<E, T[K]>}} ops - A variable number of IO instances to be executed in parallel.
+   * @returns {IO<NonEmptyList<E>, T>} - A new IO instance that resolves to a tuple of successful results or a NonEmptyList of errors.
+   */
+  @Experimental()
+  static parZip<E, T extends any[]>(...ops: { [K in keyof T]: IO<E, T[K]> }): IO<NonEmptyList<E>, T> {
+    return new IO(async () => {
+      const results = await Promise.all(ops.map((io) => io.runAsync()));
+
+      const errors = results.filter((result) => result.type === "Err").map((result) => (result as Err<E>).error);
+
+      if (errors.length > 0) {
+        return IO.err(NonEmptyList.fromArray(errors));
+      }
+
+      const values = results.map((result) => (result as Ok<any>).value) as T;
+      return IO.ok(values);
+    });
+  }
 
   /**
    * Provides a mechanism for recovering from errors in this `IO` operation by applying a provided
