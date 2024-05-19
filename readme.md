@@ -4,10 +4,10 @@
 
 ### Overview
 
-The `monadyssey` library is a powerful TypeScript toolkit designed to enhance the development of 
+The `monadyssey` library is a TypeScript toolkit designed to enhance the development of 
 robust applications by introducing a series of advanced data structures and control flow mechanisms. 
 With its roots in functional programming principles, `monadyssey` aims to solve common challenges in 
-application development, particularly around list handling, asynchronous operations, and error management.
+application development, particularly around asynchronous operations, and error management.
 
 ### Functional Programming at its Core
 

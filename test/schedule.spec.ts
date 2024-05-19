@@ -191,4 +191,80 @@ describe("Schedule", () => {
       expect((result as Err<Error>).error.message).toContain("Failed to complete the operation");
     });
   });
+
+  describe("cancel", () => {
+    let schedule: Schedule;
+    let policy: Policy;
+
+    beforeEach(() => {
+      policy = {
+        recurs: 5,
+        factor: 1.2,
+        delay: 100,
+        timeout: 300,
+      };
+    });
+
+    test("should cancel retryIf operation", async () => {
+      schedule = new Schedule(policy);
+      let attempt = 0;
+      const f = IO.ofSync(() => {
+        attempt++;
+        if (attempt === 4) {
+          return 42;
+        } else {
+          throw new Error("Unexpected error");
+        }
+      });
+
+      // always retry
+      const retryCondition = () => true;
+      const liftE = (error: Error): string => error.message;
+
+      const operation = schedule.retryIf(() => f, retryCondition, liftE);
+      // Cancel the operation after a short delay
+      setTimeout(() => schedule.cancel(), 150);
+
+      const result = await operation.runAsync();
+
+      expect(IO.isErr(result)).toEqual(true);
+
+      const error = result as Err<string>;
+      expect(error.error).toBe("Operation was cancelled");
+
+      // Ensure it was cancelled before completing all retries
+      expect(attempt).toBeLessThan(5);
+    });
+
+    test("should cancel repeat operation", async () => {
+      // repeats indefinitely until an error occurs or the scheduler is cancelled
+      schedule = new Schedule({
+        recurs: Infinity,
+        factor: 1,
+        delay: 100,
+        timeout: 300,
+      });
+
+      class BusinessError {
+        message: string;
+        constructor(message: string) {
+          this.message = message;
+        }
+      }
+
+      const f = IO.ofSync(() => 42);
+      const liftE = (error: Error): BusinessError => new BusinessError(error.message);
+
+      const operation = schedule.repeat(() => f, liftE);
+      // Cancel the operation after a short delay
+      setTimeout(() => schedule.cancel(), 150);
+
+      const result = await operation.runAsync();
+
+      expect(IO.isErr(result)).toEqual(true);
+
+      const error = result as Err<BusinessError>;
+      expect(error.error.message).toBe("Operation was cancelled");
+    });
+  });
 });
