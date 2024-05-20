@@ -1,3 +1,11 @@
+# [1.4.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.3.1...v1.4.0) (2024-05-20)
+
+
+### Features
+
+* Introduce Either.catch() for enhanced error handling ([#29](https://github.com/gabriel-bornea/monadyssey/issues/29)) ([437bcf0](https://github.com/gabriel-bornea/monadyssey/commit/437bcf0f4e78498af535872d03aa53c4f11046cd))
+* Introduced the ability to cancel ongoing scheduled operations in the Schedule class. Deprecated `zip2` and `zip3` methods and replaced them with an experimental, more generic `parZip` functionality. ([#30](https://github.com/gabriel-bornea/monadyssey/issues/30)) ([cb487bd](https://github.com/gabriel-bornea/monadyssey/commit/cb487bdc03557079e7b4d15f2eb70bcc3e7fd0b9))
+
 ## [1.3.1](https://github.com/gabriel-bornea/monadyssey/compare/v1.3.0...v1.3.1) (2024-05-04)
 
 
