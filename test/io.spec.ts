@@ -414,13 +414,10 @@ describe("IO", () => {
       const first = IO.ofSync(() => 1);
       const second = IO.ofSync(() => "second");
 
-      await IO.parZip(first, second).fold(
-        () => fail(),
-        (result) => {
-          expect(result[0]).toBe(1);
-          expect(result[1]).toBe("second");
-        }
-      );
+      await IO.parZip(first, second, (num, str): void => {
+        expect(num).toBe(1);
+        expect(str).toBe("second");
+      }).runAsync();
     });
 
     test("should successfully execute in parallel three operations", async () => {
@@ -428,24 +425,25 @@ describe("IO", () => {
       const second = IO.ofSync(() => "second");
       const third = IO.ofSync(() => true);
 
-      await IO.parZip(first, second, third).fold(
-        () => fail(),
-        (result) => {
-          expect(result[0]).toBe(1);
-          expect(result[1]).toBe("second");
-          expect(result[2]).toBe(true);
-        }
-      );
+      await IO.parZip(first, second, third, (num, str, bool) => {
+        expect(num).toBe(1);
+        expect(str).toBe("second");
+        expect(bool).toBe(true);
+      }).runAsync();
     });
 
     test("should accumulate errors when executing in parallel two operation", async () => {
       const first = IO.failed("error1");
       const second = IO.failed("error2");
 
-      await IO.parZip(first, second).fold(
-        (errors) => expect(errors.size).toBe(2),
-        () => fail()
-      );
+      const result = await IO.parZip(first, second, (_num, _str) => fail()).runAsync();
+
+      switch (result.type) {
+        case "Ok":
+          return fail();
+        case "Err":
+          expect(result.error.size).toBe(2);
+      }
     });
 
     test("should accumulate errors when only some operations fail", async () => {
@@ -454,10 +452,28 @@ describe("IO", () => {
       const third = IO.ofSync(() => 3);
       const fourth = IO.failed("error4");
 
-      await IO.parZip(first, second, third, fourth).fold(
-        (err) => expect(err.size).toBe(2),
-        () => fail()
-      );
+      const result = await IO.parZip(first, second, third, fourth, (_num1, _str1, _num2, _str2) => fail()).runAsync();
+
+      switch (result.type) {
+        case "Ok":
+          return fail();
+        case "Err":
+          expect(result.error.size).toBe(2);
+      }
+    });
+
+    test("should map the result of the operations in the callback", async () => {
+      const first = IO.ofSync(() => 1);
+      const second = IO.ofSync(() => "2");
+
+      const result = await IO.parZip(first, second, (num, str) => `${num}, ${str}`).runAsync();
+
+      switch (result.type) {
+        case "Err":
+          return fail();
+        case "Ok":
+          expect(result.value).toBe("1, 2");
+      }
     });
   });
 
