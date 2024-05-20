@@ -546,28 +546,50 @@ export class IO<E, A> {
 
   /**
    * Combines multiple `IO` operations into a single `IO` operation that, when executed, will run all
-   * operations in parallel and encapsulate their results in a tuple. If the operations succeed, the
-   * resulting `IO` instance will contain an `Ok` with a tuple of the results. If one or more operations
-   * fail, the resulting `IO` instance will contain an `Err` with a non-empty list of errors.
+   * operations in parallel and process their results using a provided callback function. If all operations
+   * succeed, the resulting `IO` instance will contain an `Ok` with the result of the callback function applied
+   * to the results of the `IO` operations. If one or more operations fail, the resulting `IO` instance will
+   * contain an `Err` with a non-empty list of errors.
    *
    * @template E - The type of the error.
    * @template T - A tuple type representing the types of the values contained in each IO instance.
-   * @param {...{[K in keyof T]: IO<E, T[K]>}} ops - A variable number of IO instances to be executed in parallel.
-   * @returns {IO<NonEmptyList<E>, T>} - A new IO instance that resolves to a tuple of successful results or a NonEmptyList of errors.
+   * @template R - The return type of the callback function.
+   * @param {...{ [K in keyof T]: IO<E, T[K]> }, (...args: T) => R} ops - A variable number of IO operations to
+   * be executed in parallel, followed by a callback function that processes the results of the IO operations.
+   * @returns {IO<NonEmptyList<E>, R>} - A new IO instance that resolves to the result of the callback function
+   *                                    if all operations succeed, or a NonEmptyList of errors if any operation fails.
+   * @example
+   * const first = IO.ofSync(() => 1);
+   * const second = IO.ofSync(() => "2");
+   *
+   * const result = await IO.parZip(first, second, (num, str) => `${num}, ${str}`).runAsync();
+   *
+   * switch (result.type) {
+   *   case "Err":
+   *     console.error("Errors:", result.error.errors);
+   *   case "Ok":
+   *     console.log(result.value); // Output: "1, 2"
+   * }
    */
   @Experimental()
-  static parZip<E, T extends any[]>(...ops: { [K in keyof T]: IO<E, T[K]> }): IO<NonEmptyList<E>, T> {
+  static parZip<E, T extends any[], R>(
+    ...ops: [...{ [K in keyof T]: IO<E, T[K]> }, (...args: T) => R]
+  ): IO<NonEmptyList<E>, R> {
     return new IO(async () => {
-      const results = await Promise.all(ops.map((io) => io.runAsync()));
+      const input = ops.slice(0, -1) as { [K in keyof T]: IO<E, T[K]> };
+      const output = ops[ops.length - 1] as (...args: T) => R;
 
-      const errors = results.filter((result) => result.type === "Err").map((result) => (result as Err<E>).error);
+      const results = await Promise.all(input.map((op) => op.runAsync()));
+
+      const errors = results.filter((result): result is Err<E> => result.type === "Err").map((result) => result.error);
 
       if (errors.length > 0) {
         return IO.err(NonEmptyList.fromArray(errors));
       }
 
-      const values = results.map((result) => (result as Ok<any>).value) as T;
-      return IO.ok(values);
+      const values = results.filter((result): result is Ok<any> => result.type === "Ok").map(({ value }) => value) as T;
+
+      return IO.ok(output(...values));
     });
   }
 
