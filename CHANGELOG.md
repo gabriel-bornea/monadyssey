@@ -1,3 +1,10 @@
+## [1.4.1](https://github.com/gabriel-bornea/monadyssey/compare/v1.4.0...v1.4.1) (2024-05-20)
+
+
+### Bug Fixes
+
+* `IO.parZip` accepts a callback function and processes the results of parallel IO operations through it. If all operations are successful, the combined result is the return value of the callback function. ([#32](https://github.com/gabriel-bornea/monadyssey/issues/32)) ([5db0db1](https://github.com/gabriel-bornea/monadyssey/commit/5db0db1d5b31bb6487c0d56996f6ea5e9b60e854))
+
 # [1.4.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.3.1...v1.4.0) (2024-05-20)
 
 
