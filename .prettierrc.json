@@ -2,5 +2,6 @@
   "proseWrap": "never",
   "quoteProps": "consistent",
   "trailingComma": "es5",
-  "printWidth": 120
+  "printWidth": 120,
+  "arrowParens": "always"
 }

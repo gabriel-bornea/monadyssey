@@ -136,5 +136,4 @@ inclusive, productive, and enjoyable environment for everyone involved. Your con
 feedback, and enthusiasm drive the continuous improvement of monadyssey and help us build a stronger, 
 more diverse community.
 
-Your contributions make `monadyssey` better for everyone. Thank you for investing your time and effort 
-into this project.
+Your contributions make `monadyssey` better for everyone. Thank you for investing your time and effort into this project.
