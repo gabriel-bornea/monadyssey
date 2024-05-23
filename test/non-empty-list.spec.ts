@@ -37,7 +37,7 @@ describe("NonEmptyList", () => {
     const nel = NonEmptyList.fromArray(array);
 
     const func = () => nel.get(5);
-    expect(func).toThrowError("Index 5 is not in 0..2");
+    expect(func).toThrowError("Index 5 is out of bounds. Must be between 0 and 2");
   });
 
   it("should correctly transform to a string", () => {

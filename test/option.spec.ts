@@ -22,6 +22,7 @@ describe("Option", () => {
       expect(option).toEqual(Some.of("I'm here."));
     });
   });
+
   describe("map", () => {
     it("should transform the value of a Some instance", () => {
       const option: Option<number> = Some.of(5);
@@ -111,6 +112,34 @@ describe("Option", () => {
       });
       expect(message).toBe("");
       expect(result).toEqual(Some.of(5));
+    });
+  });
+
+  describe("getOrNull", () => {
+    it("should return the value for a Some instance", () => {
+      const option: Option<number> = Some.of(5);
+      const result = option.getOrNull();
+      expect(result).toBe(5);
+    });
+
+    it("should return null for a None instance", () => {
+      const option: Option<number> = None.Instance;
+      const result = option.getOrNull();
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("getOrElse", () => {
+    it("should return the value for a Some instance", () => {
+      const option: Option<number> = Some.of(5);
+      const result = option.getOrElse(() => 0);
+      expect(result).toBe(5);
+    });
+
+    it("should return the default value for a None instance", () => {
+      const option: Option<number> = None.Instance;
+      const result = option.getOrElse(() => 0);
+      expect(result).toBe(0);
     });
   });
 });

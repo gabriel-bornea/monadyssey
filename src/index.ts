@@ -15,3 +15,4 @@ export { Either, Left, Right } from "./either.ts";
 export type { SequenceError } from "./io.ts";
 export { Option, None, Some } from "./option.ts";
 export { identity, TODO } from "./utils.ts";
+export { Eval, EvaluationError } from "./eval.ts";
