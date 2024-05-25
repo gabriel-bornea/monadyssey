@@ -89,4 +89,54 @@ describe("Eval", () => {
       expect(result).toBe(5);
     });
   });
+
+  describe("error handling", () => {
+    it("should handle error in deferred computation", () => {
+      const ev = Eval.defer(() => {
+        throw new Error("Deferred error");
+      });
+      expect(() => ev.evaluate()).toThrow("Deferred error");
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle computations returning null", () => {
+      const ev = Eval.defer(() => null);
+      expect(ev.evaluate()).toBeNull();
+    });
+
+    it("should handle computations returning undefined", () => {
+      const ev = Eval.defer(() => undefined);
+      expect(ev.evaluate()).toBeUndefined();
+    });
+
+    it("should handle computations returning NaN", () => {
+      const ev = Eval.defer(() => NaN);
+      expect(ev.evaluate()).toBeNaN();
+    });
+  });
+
+  describe("async", () => {
+    it("should handle asynchronous computations", async () => {
+      const ev = Eval.defer(async () => 42);
+      expect(await ev.evaluate()).toBe(42);
+    });
+  });
+
+  describe("different types", () => {
+    it("should handle string data type", () => {
+      const ev = Eval.now("string");
+      expect(ev.evaluate()).toBe("string");
+    });
+
+    it("should handle boolean data type", () => {
+      const ev = Eval.now(true);
+      expect(ev.evaluate()).toBe(true);
+    });
+
+    it("should handle object data type", () => {
+      const ev = Eval.now({ key: "value" });
+      expect(ev.evaluate()).toStrictEqual({ key: "value" });
+    });
+  });
 });

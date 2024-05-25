@@ -172,8 +172,8 @@ export abstract class Eval<A> {
    */
   /* eslint-disable @typescript-eslint/no-this-alias, no-constant-condition */
   evaluate(): A {
-    let current: Eval<any> = this;
-    const stack: Array<(a: any) => Eval<any>> = [];
+    let current: Eval<A> = this;
+    const stack: Array<(a: any) => Eval<A>> = [];
     while (true) {
       if (current instanceof FlatMap) {
         if (current.first instanceof FlatMap) {
