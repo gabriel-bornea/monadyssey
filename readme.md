@@ -116,7 +116,7 @@ It is typically used for error handling without exceptions.
 
 ### Usage
 This library is designed to be used in TypeScript applications where functional programming patterns 
-are preferred for managing asynchronous operations, ensuring safety from empty lists, and handling 
+are preferred for managing asynchronous operations, ensuring safety, and handling 
 errors in a structured way.
 
 ### Examples
