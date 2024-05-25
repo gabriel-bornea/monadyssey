@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@jest/globals";
-import { Option, Some, None } from "../src";
+import { None, Option, Some } from "../src";
 
 describe("Option", () => {
   describe("ofNullable", () => {
@@ -34,6 +34,33 @@ describe("Option", () => {
       const option: Option<number> = None.Instance;
       const mapped = option.map((value) => value * 2);
       expect(mapped).toEqual(None.Instance);
+    });
+
+    it("should handle exception thrown by callback", () => {
+      const option: Option<number> = Some.of(5);
+      expect(() => {
+        option.map((_value) => {
+          throw new Error("Error in callback");
+        });
+      }).toThrowError("Error in callback");
+    });
+
+    it("should handle null returned by callback", () => {
+      const option: Option<number> = Some.of(5);
+      const mapped = option.map((_) => null);
+      expect(mapped.type).toEqual("None");
+    });
+
+    it("should handle undefined returned by callback", () => {
+      const option: Option<number> = Some.of(5);
+      const mapped = option.map((_) => undefined);
+      expect(mapped.type).toEqual("None");
+    });
+
+    it("should handle '0' inside the Some instance", () => {
+      const option: Option<number> = Some.of(0);
+      const mapped = option.map((value) => value * 2);
+      expect(mapped).toEqual(Some.of(0));
     });
   });
 
