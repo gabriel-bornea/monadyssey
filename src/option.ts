@@ -13,14 +13,15 @@ export abstract class Option<A> {
    * If the value is null or undefined, Option.None is returned.
    * Otherwise, Option.Some is returned with the given value.
    *
+   * @template A The type of the value used to create an Option instance.
    * @param {A | null | undefined} value - The value to create the Option instance from.
    * @returns {Option<A>} - The created Option instance.
    * @example
    * const maybeNumber = Option.ofNullable(5); // Returns Some(5)
    * const maybeNull = Option.ofNullable(null); // Returns None
    */
-  static ofNullable<A>(value: A | null | undefined): Option<A> {
-    return value === null || value === undefined ? None.Instance : Some.of(value);
+  static ofNullable<A>(value: A | null | undefined): Option<NonNullable<A>> {
+    return value === null || value === undefined ? None.Instance : Some.of(value as NonNullable<A>);
   }
 
   /**
@@ -48,7 +49,10 @@ export abstract class Option<A> {
    * const incrementedOption = numberOption.map(x => x + 1); // Returns Some(6)
    */
   map<B>(f: (value: A) => B): Option<B> {
-    return this.flatMap((value) => Some.of(f(value)));
+    return this.flatMap((value) => {
+      const result = f(value);
+      return result === null || result === undefined ? None.Instance : Some.of(result as NonNullable<B>);
+    });
   }
 
   /**
@@ -161,11 +165,11 @@ export class None extends Option<never> {
 /**
  * Represents an Option carrying a value.
  */
-export class Some<A> extends Option<A> {
+export class Some<A> extends Option<NonNullable<A>> {
   readonly type = "Some" as const;
   readonly self = this;
 
-  private constructor(public readonly value: A) {
+  private constructor(public readonly value: NonNullable<A>) {
     super();
   }
 
@@ -176,32 +180,32 @@ export class Some<A> extends Option<A> {
    * @example
    * const someOption = Some.of(10);
    */
-  static of<A>(value: A): Some<A> {
-    return new Some<A>(value);
+  static of<A>(value: NonNullable<A>): Some<NonNullable<A>> {
+    return new Some<NonNullable<A>>(value);
   }
 
-  flatMap<B>(f: (value: A) => Option<B>): Option<B> {
+  flatMap<B>(f: (value: NonNullable<A>) => Option<B>): Option<B> {
     return f(this.value);
   }
 
-  fold<B>(_: () => B, ifSome: (right: A) => B): B {
+  fold<B>(_: () => B, ifSome: (right: NonNullable<A>) => B): B {
     return ifSome(this.value);
   }
 
-  getOrElse(_: () => A): A {
+  getOrElse(_: () => NonNullable<A>): NonNullable<A> {
     return this.value;
   }
 
-  getOrNull(): A {
+  getOrNull(): NonNullable<A> {
     return this.value;
   }
 
-  tap(f: (value: A) => void): Option<A> {
+  tap(f: (value: NonNullable<A>) => void): Option<NonNullable<A>> {
     f(this.value);
     return this;
   }
 
-  tapNone(_: () => void): Option<A> {
+  tapNone(_: () => void): Option<NonNullable<A>> {
     return this;
   }
 }

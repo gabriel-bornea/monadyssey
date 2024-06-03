@@ -16,9 +16,9 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR TH
 
 Inspiration Acknowledgment:
 
-The `monadyssey` library's development and design approaches draw conceptual inspiration from the Haskell language,
+The monadyssey library's development and design approaches draw conceptual inspiration from the Haskell language,
 the Arrow library for Kotlin, and the Cats library for Scala. This acknowledgment is to highlight the influence
-these projects have had on `monadyssey`'s API design and embrace of functional programming paradigms. It is crucial
+these projects have had on monadyssey's API design and embrace of functional programming paradigms. It is crucial
 to note that this inspiration pertains solely to API design and architecture principles; no direct code from these
-projects has been used in `monadyssey`. This library stands as an independent work, and this section is included to
+projects has been used in monadyssey. This library stands as an independent work, and this section is included to
 honor the spirit of shared knowledge and to contribute to community growth within the functional programming ecosystem.

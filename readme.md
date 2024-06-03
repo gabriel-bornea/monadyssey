@@ -93,7 +93,7 @@ that may result in a success (`Ok<A>`) or an error (`Err<E>`).
 
 *Utility Methods*:
 
-* `zip2(f1, f2)`, `zip3(f1, f2, f3)`: Combines multiple IO operations into a single operation, executing them in parallel.
+* `parZip(f1, f2, fn, (a, b, c) => a + b + c)`: Combines multiple IO operations into a single operation, executing them in parallel.
 
 ### `Either<A, B>`
 
@@ -116,7 +116,7 @@ It is typically used for error handling without exceptions.
 
 ### Usage
 This library is designed to be used in TypeScript applications where functional programming patterns 
-are preferred for managing asynchronous operations, ensuring safety from empty lists, and handling 
+are preferred for managing asynchronous operations, ensuring safety, and handling 
 errors in a structured way.
 
 ### Examples

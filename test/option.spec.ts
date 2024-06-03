@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@jest/globals";
-import { Option, Some, None } from "../src";
+import { None, Option, Some } from "../src";
 
 describe("Option", () => {
   describe("ofNullable", () => {
@@ -22,6 +22,7 @@ describe("Option", () => {
       expect(option).toEqual(Some.of("I'm here."));
     });
   });
+
   describe("map", () => {
     it("should transform the value of a Some instance", () => {
       const option: Option<number> = Some.of(5);
@@ -33,6 +34,33 @@ describe("Option", () => {
       const option: Option<number> = None.Instance;
       const mapped = option.map((value) => value * 2);
       expect(mapped).toEqual(None.Instance);
+    });
+
+    it("should handle exception thrown by callback", () => {
+      const option: Option<number> = Some.of(5);
+      expect(() => {
+        option.map((_value) => {
+          throw new Error("Error in callback");
+        });
+      }).toThrowError("Error in callback");
+    });
+
+    it("should handle null returned by callback", () => {
+      const option: Option<number> = Some.of(5);
+      const mapped = option.map((_) => null);
+      expect(mapped.type).toEqual("None");
+    });
+
+    it("should handle undefined returned by callback", () => {
+      const option: Option<number> = Some.of(5);
+      const mapped = option.map((_) => undefined);
+      expect(mapped.type).toEqual("None");
+    });
+
+    it("should handle '0' inside the Some instance", () => {
+      const option: Option<number> = Some.of(0);
+      const mapped = option.map((value) => value * 2);
+      expect(mapped).toEqual(Some.of(0));
     });
   });
 
@@ -111,6 +139,34 @@ describe("Option", () => {
       });
       expect(message).toBe("");
       expect(result).toEqual(Some.of(5));
+    });
+  });
+
+  describe("getOrNull", () => {
+    it("should return the value for a Some instance", () => {
+      const option: Option<number> = Some.of(5);
+      const result = option.getOrNull();
+      expect(result).toBe(5);
+    });
+
+    it("should return null for a None instance", () => {
+      const option: Option<number> = None.Instance;
+      const result = option.getOrNull();
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("getOrElse", () => {
+    it("should return the value for a Some instance", () => {
+      const option: Option<number> = Some.of(5);
+      const result = option.getOrElse(() => 0);
+      expect(result).toBe(5);
+    });
+
+    it("should return the default value for a None instance", () => {
+      const option: Option<number> = None.Instance;
+      const result = option.getOrElse(() => 0);
+      expect(result).toBe(0);
     });
   });
 });
