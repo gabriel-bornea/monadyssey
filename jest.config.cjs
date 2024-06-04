@@ -4,7 +4,7 @@ module.exports = {
     '^.+\\.tsx?$': 'ts-jest',
   },
   coveragePathIgnorePatterns: [
-    "perf.conf.ts",
+    "simulation.ts",
     "index.ts",
     "vite-env.d.ts"
   ],
