@@ -1,13 +1,9 @@
-import { perf, save } from "./perf.conf";
-import { Some, None } from "../src";
+import { html, perf } from "../conf/simulation";
+import { None, Some } from "../../src";
 
 describe("Option simulation", () => {
   afterAll(() => {
-    save();
-  });
-
-  it("warmup", () => {
-    perf("warmup", () => {});
+    html("Option");
   });
 
   it("Some.of", () => {

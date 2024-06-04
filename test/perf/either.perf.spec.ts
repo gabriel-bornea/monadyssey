@@ -1,13 +1,9 @@
-import { perf, save } from "./perf.conf";
-import { Either, Left, Right } from "../src";
+import { html, perf } from "../conf/simulation";
+import { Either, Left, Right } from "../../src";
 
 describe("Either simulation", () => {
   afterAll(() => {
-    save();
-  });
-
-  it("warmup", () => {
-    perf("warmup", () => {});
+    html("Either");
   });
 
   it("Right.of", () => {
