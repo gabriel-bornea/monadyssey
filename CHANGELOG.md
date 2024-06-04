@@ -1,3 +1,15 @@
+# [1.5.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.4.1...v1.5.0) (2024-06-04)
+
+
+### Features
+
+* Introduces a new 'Eval' type that represents deferred computations with the ability to specify immediate, deferred, and lazy computations. ([#33](https://github.com/gabriel-bornea/monadyssey/issues/33)) ([7640f88](https://github.com/gabriel-bornea/monadyssey/commit/7640f883b5679b312520f9fe5b9ddb042c56f369))
+
+
+### Performance Improvements
+
+* Refactor performance testing infrastructure and tests. Introduced simulation.ts, which encapsulates the performance testing functionalities. ([#34](https://github.com/gabriel-bornea/monadyssey/issues/34)) ([08d7357](https://github.com/gabriel-bornea/monadyssey/commit/08d73576e67a0f40f07a3d0e55fb85b7a4ebd5ea))
+
 ## [1.4.1](https://github.com/gabriel-bornea/monadyssey/compare/v1.4.0...v1.4.1) (2024-05-20)
 
 
