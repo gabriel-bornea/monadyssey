@@ -1,3 +1,10 @@
+## [1.5.1](https://github.com/gabriel-bornea/monadyssey/compare/v1.5.0...v1.5.1) (2024-07-02)
+
+
+### Bug Fixes
+
+* Updates the `handleErrorWith` function in the IO data type to allow more flexible error handling. It also improves error type inference in case of errors. ([#38](https://github.com/gabriel-bornea/monadyssey/issues/38)) ([b7a859b](https://github.com/gabriel-bornea/monadyssey/commit/b7a859b6907cbc447fa10cb0a835803c6b55cd3b))
+
 # [1.5.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.4.1...v1.5.0) (2024-06-04)
 
 
