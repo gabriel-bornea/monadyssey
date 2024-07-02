@@ -360,6 +360,18 @@ describe("IO", () => {
   });
 
   describe("handleErrorWith", () => {
+    interface User {
+      username: string,
+      email: string
+    }
+
+    class UserNotFoundError {
+      message: string;
+      constructor(message: string) {
+        this.message = message;
+      }
+    }
+
     it("should handle the error raised", async () => {
       const effect = IO.ofSync(() => {
         throw new Error("Error message");
@@ -369,6 +381,49 @@ describe("IO", () => {
 
       expect(result.type).toEqual("Err");
       expect((result as Err<string>).error).toEqual("Error handled");
+    });
+
+    it("should handle the error raised and infer types correctly", async () => {
+      const getUser = (username: string): User => {
+        if (username === "u1") {
+          return {
+            username: "u1",
+            email: "u1@example.com"
+          }
+        } else {
+          throw new Error("User not found");
+        }
+      }
+
+      const result = await IO
+        .ofSync(() => getUser("u1"))
+        .handleErrorWith((e: unknown) => new UserNotFoundError(e instanceof Error ? e.message : "Failed to retrieve user"))
+        .runAsync();
+
+      switch (result.type) {
+        case "Err":
+          return fail();
+        case "Ok":
+          expect(result.value.email).toEqual("u1@example.com");
+      }
+    });
+
+    it("should handle the error raised and infer types correctly in case of error", async () => {
+      const getCurrentUser = (): User => {
+        throw new Error("User not found");
+      }
+
+      const result = await IO
+        .ofSync(() => getCurrentUser())
+        .handleErrorWith((e: unknown) => new UserNotFoundError(e instanceof Error ? e.message : "Failed to retrieve user"))
+        .runAsync();
+
+      switch (result.type) {
+        case "Ok":
+          return fail();
+        case "Err":
+          expect(result.error).toBeInstanceOf(UserNotFoundError);
+      }
     });
   });
 
