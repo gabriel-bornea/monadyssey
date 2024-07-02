@@ -711,20 +711,20 @@ export class IO<E, A> {
    * as needed, while also ensuring that unexpected exceptions are caught and handled in a consistent
    * manner.
    *
-   * @template E The type of the error that the operation may produce and that the error handler
-   * function deals with.
+   * @template E The type of the error that the operation may produce.
+   * @template F The type of the error returned by the handler function.
    * @template A The type of the result that the operation yields upon success.
-   * @param {function(error: E): E} handle An error handler function that takes the error of the failed
-   * operation or the caught exception as input and returns a new error of type `E`. This transformed
+   * @param {function(error: E): F} handle An error handler function that takes the error of the failed
+   * operation or the caught exception as input and returns a new error of type `F`. This transformed
    * or recovered error will be encapsulated in the returned `IO` instance if the original operation
    * fails or an exception is caught.
-   * @returns {IO<E, A>} A new `IO` instance representing the operation with its error handled by the
+   * @returns {IO<F, A>} A new `IO` instance representing the operation with its error handled by the
    * provided function. If the original operation or the catch block throws an exception, the new
    * instance will encapsulate the error returned by the error handler function. If the original
    * operation succeeds, the new instance will encapsulate the original result.
    */
-  handleErrorWith(handle: (error: E) => E): IO<E, A> {
-    const effect = new IO<E, A>(this.effect);
+  handleErrorWith<F>(handle: (error: E) => F): IO<F, A> {
+    const effect = new IO<F, A>();
     effect.operations = this.operations.map((op) => async (prev: any) => {
       try {
         const result = await op(prev);
