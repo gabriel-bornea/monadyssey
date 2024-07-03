@@ -16,13 +16,13 @@
   "files": [
     "dist"
   ],
-  "main": "./dist/monadyssey.cjs.js",
-  "module": "./dist/monadyssey.es.js",
+  "main": "./dist/monadyssey.cjs",
+  "module": "./dist/monadyssey.mjs",
   "typings": "./dist/monadyssey.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/monadyssey.es.js",
-      "require": "./dist/monadyssey.cjs.js",
+      "import": "./dist/monadyssey.mjs",
+      "require": "./dist/monadyssey.cjs",
       "types": "./dist/monadyssey.d.ts"
     },
     "./package.json": "./package.json"
