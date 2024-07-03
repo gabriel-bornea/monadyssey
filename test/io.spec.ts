@@ -361,8 +361,8 @@ describe("IO", () => {
 
   describe("handleErrorWith", () => {
     interface User {
-      username: string,
-      email: string
+      username: string;
+      email: string;
     }
 
     class UserNotFoundError {
@@ -388,16 +388,17 @@ describe("IO", () => {
         if (username === "u1") {
           return {
             username: "u1",
-            email: "u1@example.com"
-          }
+            email: "u1@example.com",
+          };
         } else {
           throw new Error("User not found");
         }
-      }
+      };
 
-      const result = await IO
-        .ofSync(() => getUser("u1"))
-        .handleErrorWith((e: unknown) => new UserNotFoundError(e instanceof Error ? e.message : "Failed to retrieve user"))
+      const result = await IO.ofSync(() => getUser("u1"))
+        .handleErrorWith(
+          (e: unknown) => new UserNotFoundError(e instanceof Error ? e.message : "Failed to retrieve user")
+        )
         .runAsync();
 
       switch (result.type) {
@@ -411,11 +412,12 @@ describe("IO", () => {
     it("should handle the error raised and infer types correctly in case of error", async () => {
       const getCurrentUser = (): User => {
         throw new Error("User not found");
-      }
+      };
 
-      const result = await IO
-        .ofSync(() => getCurrentUser())
-        .handleErrorWith((e: unknown) => new UserNotFoundError(e instanceof Error ? e.message : "Failed to retrieve user"))
+      const result = await IO.ofSync(() => getCurrentUser())
+        .handleErrorWith(
+          (e: unknown) => new UserNotFoundError(e instanceof Error ? e.message : "Failed to retrieve user")
+        )
         .runAsync();
 
       switch (result.type) {

@@ -8,7 +8,6 @@
     "type": "git",
     "url": "https://github.com/gabriel-bornea/monadyssey"
   },
-  "repositoryUrl": "https://github.com/gabriel-bornea/monadyssey",
   "keywords": [
     "functional programming",
     "typescript"
@@ -17,14 +16,16 @@
   "files": [
     "dist"
   ],
-  "main": "./dist/monadyssey.umd.cjs",
+  "main": "./dist/monadyssey.cjs.js",
+  "module": "./dist/monadyssey.es.js",
   "typings": "./dist/monadyssey.d.ts",
-  "module": "./dist/monadyssey.js",
   "exports": {
     ".": {
-      "import": "./dist/monadyssey.js",
-      "require": "./dist/monadyssey.umd.cjs"
-    }
+      "import": "./dist/monadyssey.es.js",
+      "require": "./dist/monadyssey.cjs.js",
+      "types": "./dist/monadyssey.d.ts"
+    },
+    "./package.json": "./package.json"
   },
   "scripts": {
     "prebuild": "npm run test",
@@ -34,7 +35,7 @@
     "prettier:fix": "npm run prettier -- --write",
     "format": "npm run lint:fix && npm run prettier:fix",
     "test": "node --expose-gc ./node_modules/.bin/jest --verbose --coverage --config jest.config.cjs --detectOpenHandles",
-    "build": "tsc && npm run format && DEBUG=\"vite-plugin-dts:bundle\" && vite build"
+    "build": "tsc && npm run format && vite build"
   },
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
