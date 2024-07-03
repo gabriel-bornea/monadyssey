@@ -12,11 +12,11 @@ export default defineConfig({
     lib: {
       entry: resolve(__dirname, "src/index.ts"),
       name: "monadyssey",
-      fileName: (format) => `monadyssey.${format}.js`,
+      fileName: (format) => `monadyssey.${format === 'es' ? 'mjs' : format === 'cjs' ? 'cjs' : 'umd.js'}`,
       formats: ["es", "cjs", "umd"],
     },
     outDir: "dist",
-    sourcemap: true, // Optional: Useful for debugging
+    sourcemap: true,
   },
   plugins: [
     dts({
