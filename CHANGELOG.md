@@ -1,3 +1,10 @@
+## [1.5.3](https://github.com/gabriel-bornea/monadyssey/compare/v1.5.2...v1.5.3) (2024-07-03)
+
+
+### Bug Fixes
+
+* Update module filename extensions in configuration files. ([#41](https://github.com/gabriel-bornea/monadyssey/issues/41)) ([3c121b3](https://github.com/gabriel-bornea/monadyssey/commit/3c121b3959b1e25374c2e1acc7756273c9168319))
+
 ## [1.5.2](https://github.com/gabriel-bornea/monadyssey/compare/v1.5.1...v1.5.2) (2024-07-03)
 
 
