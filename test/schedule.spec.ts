@@ -94,7 +94,7 @@ describe("Schedule", () => {
       const condition = () => retryCounter !== 2;
       const liftE = (error: Error): Error => error;
 
-      const result = await schedule.retryIf(() => eff, condition, liftE).runAsync();
+      const result = await schedule.retryIf(eff, condition, liftE).runAsync();
 
       expect(IO.isOk(result)).toBe(true);
       expect((result as Ok<number>).value).toBe(2);
@@ -124,7 +124,7 @@ describe("Schedule", () => {
 
       const result = await schedule
         .retryIf(
-          () => eff,
+          eff,
           (e) => e.retryable === true,
           (e) => new BusinessError(e.message, false)
         )
@@ -141,7 +141,7 @@ describe("Schedule", () => {
       const condition = () => true;
       const liftE = (error: Error): Error => error;
 
-      const result = await schedule.retryIf(() => eff, condition, liftE).runAsync();
+      const result = await schedule.retryIf(eff, condition, liftE).runAsync();
 
       expect(IO.isErr(result)).toBe(true);
       expect((result as Err<Error>).error.message).toBe("Failed to execute operation");
@@ -153,7 +153,7 @@ describe("Schedule", () => {
       const condition = () => true;
       const liftE = (error: Error): Error => error;
 
-      const result = await schedule.retryIf(() => eff, condition, liftE).runAsync();
+      const result = await schedule.retryIf(eff, condition, liftE).runAsync();
 
       expect(IO.isErr(result)).toBe(true);
       expect((result as Err<Error>).error.message).toBe("The operation timed out after 300 milliseconds");
@@ -183,7 +183,7 @@ describe("Schedule", () => {
       });
 
       const liftE = (error: Error): string => error.message;
-      const result = await schedule.repeat(() => eff, liftE).runAsync();
+      const result = await schedule.repeat(eff, liftE).runAsync();
 
       expect(result.type).toBe("Ok");
       expect((result as Ok<number>).value).toBe(3);
@@ -201,7 +201,7 @@ describe("Schedule", () => {
       });
       const liftE = (error: Error): Error => new Error(`Unexpected error: ${error.message}`);
 
-      const result = await schedule.repeat(() => eff, liftE).runAsync();
+      const result = await schedule.repeat(eff, liftE).runAsync();
 
       expect(IO.isOk(result)).toBe(true);
       expect((result as Ok<number>).value).toBe(42);
@@ -219,7 +219,7 @@ describe("Schedule", () => {
       });
       const liftE = (error: Error) => error;
 
-      const result = await schedule.repeat(() => eff, liftE).runAsync();
+      const result = await schedule.repeat(eff, liftE).runAsync();
 
       expect(IO.isErr(result)).toBe(true);
       expect((result as Err<Error>).error.message).toContain("Failed to complete the operation");
@@ -255,7 +255,7 @@ describe("Schedule", () => {
       const retryCondition = () => true;
       const liftE = (error: Error): string => error.message;
 
-      const operation = schedule.retryIf(() => eff, retryCondition, liftE);
+      const operation = schedule.retryIf(eff, retryCondition, liftE);
       // Cancel the operation after a short delay
       setTimeout(() => schedule.cancel(), 150);
 
@@ -290,7 +290,7 @@ describe("Schedule", () => {
       const eff = IO.ofSync(() => 42);
       const liftE = (error: Error): BusinessError => new BusinessError(error.message);
 
-      const operation = schedule.repeat(() => eff, liftE);
+      const operation = schedule.repeat(eff, liftE);
       // Cancel the operation after a short delay
       setTimeout(() => schedule.cancel(), 150);
 

@@ -8,23 +8,23 @@ export interface Policy {
   /**
    * The maximum number of retry attempts. Must be a positive integer.
    */
-  recurs: number;
+  readonly recurs: number;
 
   /**
    * The factor by which the delay increases after each retry. Must be greater than or equal to 1.
    */
-  factor: number;
+  readonly factor: number;
 
   /**
    * The initial delay in milliseconds before the first retry. Must be non-negative.
    */
-  delay: number;
+  readonly delay: number;
 
   /**
    * Optional. The maximum duration in milliseconds that each attempt can take before timing out.
    * If not set, attempts will not time out.
    */
-  timeout?: number;
+  readonly timeout?: number;
 }
 
 /**
@@ -84,8 +84,8 @@ export class Schedule {
    * @template E The error type inside the IO.
    * @template A The potential result of the IO operation.
    *
-   * @param {() => IO<E, A>} eff The operation to retry.
-   * @param {() => boolean} condition The condition under which to retry the operation.
+   * @param {IO<E, A>} eff The operation to retry.
+   * @param {(e) => boolean} condition The condition under which to retry the operation.
    * @param {(error: Error) => E} liftE A function that transforms a generic Error into an instance of E.
    *
    * @returns {IO<E, A>} An IO instance that encapsulates the original operation's result if successful,
@@ -107,11 +107,7 @@ export class Schedule {
    * });
    */
   @Experimental()
-  retryIf<E, A>(
-    eff: () => IO<E, A>, // Change to a function to create new IO for each retry
-    condition: (error: E) => boolean,
-    liftE: (error: Error) => E
-  ): IO<E, A> {
+  retryIf<E, A>(eff: IO<E, A>, condition: (error: E) => boolean, liftE: (error: Error) => E): IO<E, A> {
     const policy = this.policy;
     return IO.of<E, A>(async () => {
       let attempt = 0;
@@ -160,7 +156,7 @@ export class Schedule {
    * @template E The error type inside the IO.
    * @template A The potential result of the IO action.
    *
-   * @param {() => IO<E, A>} eff The IO action to repeat.
+   * @param {IO<E, A>} eff The IO action to repeat.
    * @param {(error: Error) => E} liftE A function that transforms a generic Error into an instance of E.
    *
    * @returns {IO<E, A>} An IO instance that encapsulates the last successful result
@@ -181,7 +177,7 @@ export class Schedule {
    * });
    */
   @Experimental()
-  repeat<E, A>(eff: () => IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
+  repeat<E, A>(eff: IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
     const policy = this.policy;
     let timeoutId: NodeJS.Timeout | null = null;
 
@@ -248,10 +244,10 @@ export class Schedule {
    *   });
    */
   @Experimental()
-  withTimeout<E, A>(eff: () => IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
+  withTimeout<E, A>(eff: IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
     const timeout = this.policy.timeout;
     if (!timeout || timeout < 1) {
-      return eff();
+      return eff;
     }
 
     return IO.of<E, A>(async () => {
@@ -264,16 +260,14 @@ export class Schedule {
         }, timeout);
       });
 
-      const opP = eff()
-        .runAsync()
-        .then((result) => {
-          switch (result.type) {
-            case "Ok":
-              return result.value;
-            case "Err":
-              return Promise.reject(result.error);
-          }
-        });
+      const opP = eff.runAsync().then((result) => {
+        switch (result.type) {
+          case "Ok":
+            return result.value;
+          case "Err":
+            return Promise.reject(result.error);
+        }
+      });
 
       try {
         const result = await Promise.race([opP, timeoutP]);
