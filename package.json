@@ -13,6 +13,11 @@
     "typescript"
   ],
   "author": "Gabriel Bornea",
+  "contributors": [
+    {
+      "name": "Tiberiu Tofan"
+    }
+  ],
   "files": [
     "dist"
   ],

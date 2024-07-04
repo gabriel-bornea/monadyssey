@@ -84,7 +84,7 @@ export class Schedule {
    * @template E The error type inside the IO.
    * @template A The potential result of the IO operation.
    *
-   * @param {() => IO<E, A>} f The operation to retry.
+   * @param {() => IO<E, A>} eff The operation to retry.
    * @param {() => boolean} condition The condition under which to retry the operation.
    * @param {(error: Error) => E} liftE A function that transforms a generic Error into an instance of E.
    *
@@ -107,15 +107,18 @@ export class Schedule {
    * });
    */
   @Experimental()
-  retryIf<E, A>(f: () => IO<E, A>, condition: () => boolean, liftE: (error: Error) => E): IO<E, A> {
+  retryIf<E, A>(
+    eff: () => IO<E, A>, // Change to a function to create new IO for each retry
+    condition: (error: E) => boolean,
+    liftE: (error: Error) => E
+  ): IO<E, A> {
     const policy = this.policy;
     return IO.of<E, A>(async () => {
       let attempt = 0;
       let delay = policy.delay;
-
       let timeoutId: NodeJS.Timeout | null = null;
 
-      while (condition() && attempt < policy.recurs) {
+      while (attempt < policy.recurs) {
         if (this.cancelled) {
           if (timeoutId) {
             clearTimeout(timeoutId);
@@ -123,16 +126,17 @@ export class Schedule {
           return Promise.reject(liftE(new CancellationError("Operation was cancelled")));
         }
 
-        const result = await this.withTimeout(f, liftE).runAsync();
-
+        const result = await this.withTimeout(eff, liftE).runAsync();
         if (IO.isOk(result)) {
           return result.value;
         }
-
-        if (attempt >= policy.recurs - 1 || !condition()) {
-          return Promise.reject(result.error);
+        const error = result.error;
+        if (!condition(error)) {
+          return Promise.reject(error);
         }
-
+        if (attempt >= policy.recurs - 1) {
+          return Promise.reject(error);
+        }
         await new Promise((resolve) => {
           timeoutId = setTimeout(resolve, delay);
           if (this.cancelled) {
@@ -143,7 +147,6 @@ export class Schedule {
         delay *= policy.factor;
         attempt++;
       }
-
       return Promise.reject(liftE(new RetryError("Retry limit reached without success")));
     });
   }
@@ -157,7 +160,7 @@ export class Schedule {
    * @template E The error type inside the IO.
    * @template A The potential result of the IO action.
    *
-   * @param {() => IO<E, A>} f The IO action to repeat.
+   * @param {() => IO<E, A>} eff The IO action to repeat.
    * @param {(error: Error) => E} liftE A function that transforms a generic Error into an instance of E.
    *
    * @returns {IO<E, A>} An IO instance that encapsulates the last successful result
@@ -178,7 +181,7 @@ export class Schedule {
    * });
    */
   @Experimental()
-  repeat<E, A>(f: () => IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
+  repeat<E, A>(eff: () => IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
     const policy = this.policy;
     let timeoutId: NodeJS.Timeout | null = null;
 
@@ -193,7 +196,7 @@ export class Schedule {
           return Promise.reject(liftE(new CancellationError("Operation was cancelled")));
         }
 
-        const result = await this.withTimeout(f, liftE).runAsync();
+        const result = await this.withTimeout(eff, liftE).runAsync();
 
         if (IO.isOk(result)) {
           lastSuccessResult = result.value;
@@ -223,7 +226,7 @@ export class Schedule {
    * @template E The error type inside the IO.
    * @template A The potential result of the IO operation.
    *
-   * @param {() => IO<E, A>} f The operation to wrap with the policy timeout.
+   * @param {() => IO<E, A>} eff The operation to wrap with the policy timeout.
    * @param {(error: Error) => E} liftE A function that transforms a generic Error into an instance of E.
    *
    * @returns {IO<E, A>} An IO instance that either encapsulates the original operation's result
@@ -245,23 +248,23 @@ export class Schedule {
    *   });
    */
   @Experimental()
-  withTimeout<E, A>(f: () => IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
+  withTimeout<E, A>(eff: () => IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
     const timeout = this.policy.timeout;
     if (!timeout || timeout < 1) {
-      return f();
+      return eff();
     }
 
     return IO.of<E, A>(async () => {
       let timeoutId: NodeJS.Timeout | null = null;
       const timeoutError = liftE(new TimeoutError(`The operation timed out after ${timeout} milliseconds`));
 
-      const timeoutPromise = new Promise<A>((_, reject) => {
+      const timeoutP = new Promise<A>((_, reject) => {
         timeoutId = setTimeout(() => {
           reject(timeoutError);
         }, timeout);
       });
 
-      const operationPromise = f()
+      const opP = eff()
         .runAsync()
         .then((result) => {
           switch (result.type) {
@@ -272,27 +275,14 @@ export class Schedule {
           }
         });
 
-      return Promise.race([
-        operationPromise
-          .catch((error) => {
-            const message = (e: unknown): string => {
-              if (typeof e === "string") {
-                return e;
-              } else if (e && typeof (e as any).message === "string") {
-                return (e as { message: string }).message;
-              } else {
-                return String(e);
-              }
-            };
-            return Promise.reject(new TimeoutError(message(error)));
-          })
-          .finally(() => {
-            if (timeoutId) clearTimeout(timeoutId);
-          }),
-        timeoutPromise.finally(() => {
-          if (timeoutId) clearTimeout(timeoutId);
-        }),
-      ]);
+      try {
+        const result = await Promise.race([opP, timeoutP]);
+        if (timeoutId) clearTimeout(timeoutId);
+        return result;
+      } catch (error) {
+        if (timeoutId) clearTimeout(timeoutId);
+        return Promise.reject(error);
+      }
     });
   }
 
