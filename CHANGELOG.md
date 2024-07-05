@@ -1,3 +1,10 @@
+## [1.5.4](https://github.com/gabriel-bornea/monadyssey/compare/v1.5.3...v1.5.4) (2024-07-05)
+
+
+### Bug Fixes
+
+* `retryIf` in `Schedule` enhances its flexibility and error handling capabilities. The change involves modifying the condition parameter from a simple boolean function to a function that accepts an error and returns a boolean. This adjustment allows the retry logic to be more context-aware and specific in determining whether to retry an operation based on the error encountered. ([#42](https://github.com/gabriel-bornea/monadyssey/issues/42)) ([91fef2a](https://github.com/gabriel-bornea/monadyssey/commit/91fef2a213ea89a28ff6cc392b2140401b73f2e4))
+
 ## [1.5.3](https://github.com/gabriel-bornea/monadyssey/compare/v1.5.2...v1.5.3) (2024-07-03)
 
 
