@@ -85,26 +85,11 @@ export class Schedule {
    * @template A The potential result of the IO operation.
    *
    * @param {IO<E, A>} eff The operation to retry.
-   * @param {(e) => boolean} condition The condition under which to retry the operation.
+   * @param {(error: E) => boolean} condition The condition under which to retry the operation.
    * @param {(error: Error) => E} liftE A function that transforms a generic Error into an instance of E.
    *
    * @returns {IO<E, A>} An IO instance that encapsulates the original operation's result if successful,
    *                      or encapsulates a RetryError if the retry limit is reached without success.
-   *
-   * @example
-   * const operation = () => new IO(() => performOperationThatMayFail());
-   * const retryCondition = () => hasResourcesForRetry();
-   * const errorLifter = (error: Error) => new CustomError(error.message);
-   *
-   * const retryIO = retryIf(operation, retryCondition, errorLifter);
-   *
-   * retryIO.runAsync().then(result => {
-   *   if (IO.isOk(result)) {
-   *     // success handling
-   *   } else {
-   *     // error handling, includes RetryError and other potential failures
-   *   }
-   * });
    */
   @Experimental()
   retryIf<E, A>(eff: IO<E, A>, condition: (error: E) => boolean, liftE: (error: Error) => E): IO<E, A> {
@@ -161,20 +146,6 @@ export class Schedule {
    *
    * @returns {IO<E, A>} An IO instance that encapsulates the last successful result
    *                      or a RepeatError if the action fails or exhausts the retries determined by the policy.
-   *
-   * @example
-   * const operation = () => new IO(() => performOperationThatMaySucceedOrFail());
-   * const errorLifter = (error: Error) => new CustomError(error.message);
-   *
-   * const repeatIO = repeat(operation, errorLifter);
-   *
-   * repeatIO.runAsync().then(result => {
-   *   if (result.type === 'Ok') {
-   *     // success handling with last successful result
-   *   } else {
-   *     // error handling, may involve RepeatError or other failures occurred during execution
-   *   }
-   * });
    */
   @Experimental()
   repeat<E, A>(eff: IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
@@ -222,26 +193,11 @@ export class Schedule {
    * @template E The error type inside the IO.
    * @template A The potential result of the IO operation.
    *
-   * @param {() => IO<E, A>} eff The operation to wrap with the policy timeout.
+   * @param {IO<E, A>} eff The operation to wrap with the policy timeout.
    * @param {(error: Error) => E} liftE A function that transforms a generic Error into an instance of E.
    *
    * @returns {IO<E, A>} An IO instance that either encapsulates the original operation's result
    *                      or a TimeoutError if the timeout is exceeded.
-   *
-   * @example
-   * const operation = () => new IO(() => performSomeOperation());
-   * const timeoutErrorLifter = (error: Error) => new CustomError(error.message);
-   *
-   * const ioWithTimeout = withTimeout(operation, timeoutErrorLifter);
-   *
-   * ioWithTimeout.runAsync()
-   *   .then(result => {
-   *     if (IO.isOk(result)) {
-   *       // success handling
-   *     } else {
-   *       // error handling, includes TimeoutError and other potential errors.
-   *     }
-   *   });
    */
   @Experimental()
   withTimeout<E, A>(eff: IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
@@ -252,11 +208,10 @@ export class Schedule {
 
     return IO.of<E, A>(async () => {
       let timeoutId: NodeJS.Timeout | null = null;
-      const timeoutError = liftE(new TimeoutError(`The operation timed out after ${timeout} milliseconds`));
 
       const timeoutP = new Promise<A>((_, reject) => {
         timeoutId = setTimeout(() => {
-          reject(timeoutError);
+          reject(liftE(new TimeoutError(`The operation timed out after ${timeout} milliseconds`)));
         }, timeout);
       });
 
