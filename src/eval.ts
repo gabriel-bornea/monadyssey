@@ -55,7 +55,7 @@ export abstract class Eval<A> {
    *
    * @example
    * // Wraps an immediate value in an Eval instance
-   * const immediateEval = Eval.immediate(42);
+   * const immediateEval = Eval.now(42);
    *
    * // The value is available immediately
    * console.log(immediateEval.evaluate()); // Logs 42

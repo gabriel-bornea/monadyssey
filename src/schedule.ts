@@ -8,23 +8,23 @@ export interface Policy {
   /**
    * The maximum number of retry attempts. Must be a positive integer.
    */
-  recurs: number;
+  readonly recurs: number;
 
   /**
    * The factor by which the delay increases after each retry. Must be greater than or equal to 1.
    */
-  factor: number;
+  readonly factor: number;
 
   /**
    * The initial delay in milliseconds before the first retry. Must be non-negative.
    */
-  delay: number;
+  readonly delay: number;
 
   /**
    * Optional. The maximum duration in milliseconds that each attempt can take before timing out.
    * If not set, attempts will not time out.
    */
-  timeout?: number;
+  readonly timeout?: number;
 }
 
 /**
@@ -84,38 +84,22 @@ export class Schedule {
    * @template E The error type inside the IO.
    * @template A The potential result of the IO operation.
    *
-   * @param {() => IO<E, A>} f The operation to retry.
-   * @param {() => boolean} condition The condition under which to retry the operation.
+   * @param {IO<E, A>} eff The operation to retry.
+   * @param {(error: E) => boolean} condition The condition under which to retry the operation.
    * @param {(error: Error) => E} liftE A function that transforms a generic Error into an instance of E.
    *
    * @returns {IO<E, A>} An IO instance that encapsulates the original operation's result if successful,
    *                      or encapsulates a RetryError if the retry limit is reached without success.
-   *
-   * @example
-   * const operation = () => new IO(() => performOperationThatMayFail());
-   * const retryCondition = () => hasResourcesForRetry();
-   * const errorLifter = (error: Error) => new CustomError(error.message);
-   *
-   * const retryIO = retryIf(operation, retryCondition, errorLifter);
-   *
-   * retryIO.runAsync().then(result => {
-   *   if (IO.isOk(result)) {
-   *     // success handling
-   *   } else {
-   *     // error handling, includes RetryError and other potential failures
-   *   }
-   * });
    */
   @Experimental()
-  retryIf<E, A>(f: () => IO<E, A>, condition: () => boolean, liftE: (error: Error) => E): IO<E, A> {
+  retryIf<E, A>(eff: IO<E, A>, condition: (error: E) => boolean, liftE: (error: Error) => E): IO<E, A> {
     const policy = this.policy;
     return IO.of<E, A>(async () => {
       let attempt = 0;
       let delay = policy.delay;
-
       let timeoutId: NodeJS.Timeout | null = null;
 
-      while (condition() && attempt < policy.recurs) {
+      while (attempt < policy.recurs) {
         if (this.cancelled) {
           if (timeoutId) {
             clearTimeout(timeoutId);
@@ -123,16 +107,17 @@ export class Schedule {
           return Promise.reject(liftE(new CancellationError("Operation was cancelled")));
         }
 
-        const result = await this.withTimeout(f, liftE).runAsync();
-
+        const result = await this.withTimeout(eff, liftE).runAsync();
         if (IO.isOk(result)) {
           return result.value;
         }
-
-        if (attempt >= policy.recurs - 1 || !condition()) {
-          return Promise.reject(result.error);
+        const error = result.error;
+        if (!condition(error)) {
+          return Promise.reject(error);
         }
-
+        if (attempt >= policy.recurs - 1) {
+          return Promise.reject(error);
+        }
         await new Promise((resolve) => {
           timeoutId = setTimeout(resolve, delay);
           if (this.cancelled) {
@@ -143,7 +128,6 @@ export class Schedule {
         delay *= policy.factor;
         attempt++;
       }
-
       return Promise.reject(liftE(new RetryError("Retry limit reached without success")));
     });
   }
@@ -157,28 +141,14 @@ export class Schedule {
    * @template E The error type inside the IO.
    * @template A The potential result of the IO action.
    *
-   * @param {() => IO<E, A>} f The IO action to repeat.
+   * @param {IO<E, A>} eff The IO action to repeat.
    * @param {(error: Error) => E} liftE A function that transforms a generic Error into an instance of E.
    *
    * @returns {IO<E, A>} An IO instance that encapsulates the last successful result
    *                      or a RepeatError if the action fails or exhausts the retries determined by the policy.
-   *
-   * @example
-   * const operation = () => new IO(() => performOperationThatMaySucceedOrFail());
-   * const errorLifter = (error: Error) => new CustomError(error.message);
-   *
-   * const repeatIO = repeat(operation, errorLifter);
-   *
-   * repeatIO.runAsync().then(result => {
-   *   if (result.type === 'Ok') {
-   *     // success handling with last successful result
-   *   } else {
-   *     // error handling, may involve RepeatError or other failures occurred during execution
-   *   }
-   * });
    */
   @Experimental()
-  repeat<E, A>(f: () => IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
+  repeat<E, A>(eff: IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
     const policy = this.policy;
     let timeoutId: NodeJS.Timeout | null = null;
 
@@ -193,7 +163,7 @@ export class Schedule {
           return Promise.reject(liftE(new CancellationError("Operation was cancelled")));
         }
 
-        const result = await this.withTimeout(f, liftE).runAsync();
+        const result = await this.withTimeout(eff, liftE).runAsync();
 
         if (IO.isOk(result)) {
           lastSuccessResult = result.value;
@@ -223,76 +193,45 @@ export class Schedule {
    * @template E The error type inside the IO.
    * @template A The potential result of the IO operation.
    *
-   * @param {() => IO<E, A>} f The operation to wrap with the policy timeout.
+   * @param {IO<E, A>} eff The operation to wrap with the policy timeout.
    * @param {(error: Error) => E} liftE A function that transforms a generic Error into an instance of E.
    *
    * @returns {IO<E, A>} An IO instance that either encapsulates the original operation's result
    *                      or a TimeoutError if the timeout is exceeded.
-   *
-   * @example
-   * const operation = () => new IO(() => performSomeOperation());
-   * const timeoutErrorLifter = (error: Error) => new CustomError(error.message);
-   *
-   * const ioWithTimeout = withTimeout(operation, timeoutErrorLifter);
-   *
-   * ioWithTimeout.runAsync()
-   *   .then(result => {
-   *     if (IO.isOk(result)) {
-   *       // success handling
-   *     } else {
-   *       // error handling, includes TimeoutError and other potential errors.
-   *     }
-   *   });
    */
   @Experimental()
-  withTimeout<E, A>(f: () => IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
+  withTimeout<E, A>(eff: IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
     const timeout = this.policy.timeout;
     if (!timeout || timeout < 1) {
-      return f();
+      return eff;
     }
 
     return IO.of<E, A>(async () => {
       let timeoutId: NodeJS.Timeout | null = null;
-      const timeoutError = liftE(new TimeoutError(`The operation timed out after ${timeout} milliseconds`));
 
-      const timeoutPromise = new Promise<A>((_, reject) => {
+      const timeoutP = new Promise<A>((_, reject) => {
         timeoutId = setTimeout(() => {
-          reject(timeoutError);
+          reject(liftE(new TimeoutError(`The operation timed out after ${timeout} milliseconds`)));
         }, timeout);
       });
 
-      const operationPromise = f()
-        .runAsync()
-        .then((result) => {
-          switch (result.type) {
-            case "Ok":
-              return result.value;
-            case "Err":
-              return Promise.reject(result.error);
-          }
-        });
+      const opP = eff.runAsync().then((result) => {
+        switch (result.type) {
+          case "Ok":
+            return result.value;
+          case "Err":
+            return Promise.reject(result.error);
+        }
+      });
 
-      return Promise.race([
-        operationPromise
-          .catch((error) => {
-            const message = (e: unknown): string => {
-              if (typeof e === "string") {
-                return e;
-              } else if (e && typeof (e as any).message === "string") {
-                return (e as { message: string }).message;
-              } else {
-                return String(e);
-              }
-            };
-            return Promise.reject(new TimeoutError(message(error)));
-          })
-          .finally(() => {
-            if (timeoutId) clearTimeout(timeoutId);
-          }),
-        timeoutPromise.finally(() => {
-          if (timeoutId) clearTimeout(timeoutId);
-        }),
-      ]);
+      try {
+        const result = await Promise.race([opP, timeoutP]);
+        if (timeoutId) clearTimeout(timeoutId);
+        return result;
+      } catch (error) {
+        if (timeoutId) clearTimeout(timeoutId);
+        return Promise.reject(error);
+      }
     });
   }
 
