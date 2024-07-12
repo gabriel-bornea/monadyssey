@@ -16,3 +16,5 @@ export type { SequenceError } from "./io.ts";
 export { Option, None, Some } from "./option.ts";
 export { identity, TODO, NotImplementedYetError } from "./utils.ts";
 export { Eval, EvaluationError } from "./eval.ts";
+export type { Logger } from "./logger.ts";
+export { LoggerConfig } from "./logger.ts";
