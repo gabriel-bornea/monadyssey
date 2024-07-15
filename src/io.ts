@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { NonEmptyList } from "./non-empty-list.ts";
 import { Deprecated, Experimental } from "./decorators.ts";
 
