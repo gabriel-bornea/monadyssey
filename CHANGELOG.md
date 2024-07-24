@@ -1,3 +1,11 @@
+## [1.5.5](https://github.com/gabriel-bornea/monadyssey/compare/v1.5.4...v1.5.5) (2024-07-24)
+
+
+### Bug Fixes
+
+* Remove SequenceError wrapper from `forM` in order to preserve the user defined errors. ([#47](https://github.com/gabriel-bornea/monadyssey/issues/47)) ([5536c34](https://github.com/gabriel-bornea/monadyssey/commit/5536c345b39560bda46c071f17b335f98ecaded3))
+* Update dev dependencies ([#46](https://github.com/gabriel-bornea/monadyssey/issues/46)) ([4e897a0](https://github.com/gabriel-bornea/monadyssey/commit/4e897a03b9e554b5f5a327d324f6b1584c5b7aac))
+
 ## [1.5.4](https://github.com/gabriel-bornea/monadyssey/compare/v1.5.3...v1.5.4) (2024-07-05)
 
 
