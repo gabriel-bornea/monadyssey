@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@jest/globals";
-import { Err, IO, NonEmptyList, Ok, SequenceError } from "../src";
+import { Err, IO, NonEmptyList, Ok } from "../src";
 
 describe("IO", () => {
   describe("of", () => {
@@ -557,10 +557,13 @@ describe("IO", () => {
         return one + two;
       }).runAsync();
 
-      expect(IO.isErr(result)).toBe(true);
-      const seqErr = (result as Err<Error>).error as SequenceError<Error>;
-
-      expect(seqErr.error).toBe("fail");
+      switch (result.type) {
+        case "Err":
+          expect(result.error).toBe("fail");
+          break;
+        case "Ok":
+          fail("Operation should not be successful");
+      }
     });
 
     it("should execute the operation lazy", async () => {
@@ -589,6 +592,40 @@ describe("IO", () => {
 
       expect(sharedState).toBe(3);
       expect(result).toBe(4);
+    });
+
+    it("should fail with the user defined error", async () => {
+      class BusinessError {
+        public readonly message: string;
+        public constructor(message: string) {
+          this.message = message;
+        }
+      }
+
+      const effOne: IO<BusinessError, number> = IO.ofSync(() => 1);
+      const effTwo = (value: number): IO<BusinessError, number> => {
+        if (value < 1) {
+          return IO.failed(new BusinessError("Something went wrong"));
+        } else {
+          return IO.ofSync(() => 2);
+        }
+      };
+
+      const eff = await IO.forM<BusinessError, number>(async (bind) => {
+        const one = await bind(effOne);
+        const two = await bind(effTwo(0));
+
+        return one + two;
+      }).runAsync();
+
+      switch (eff.type) {
+        case "Ok":
+          expect(eff.value).toBe(-1);
+          break;
+        case "Err":
+          expect(eff.error.message).toBe("Something went wrong");
+          break;
+      }
     });
   });
 });
