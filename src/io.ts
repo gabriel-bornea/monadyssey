@@ -898,29 +898,10 @@ export class IO<E, A> {
           case "Ok":
             return result.value;
           case "Err":
-            throw new SequenceError(result.error);
+            throw result.error;
         }
       });
     };
-
     return IO.of(() => operation(bind));
-  }
-}
-
-/**
- * Represents errors that occur during the continuation of operations, especially
- * within monadic bind operations or asynchronous chains where continuation
- * semantics are violated or cannot be executed due to some failure conditions.
- *
- * This error class is typically used in scenarios where a sequence of operations
- * needs strict error handling and where each step's execution is contingent upon
- * the successful completion of the previous one.
- *
- * @extends Error
- */
-export class SequenceError<E> extends Error {
-  constructor(readonly error: E) {
-    super();
-    this.name = "SequenceError";
   }
 }
