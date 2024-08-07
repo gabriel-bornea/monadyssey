@@ -170,7 +170,7 @@ export abstract class Eval<A> {
    * // Evaluates the composed operation
    * console.log(composedEval.evaluate()); // Logs 42
    */
-  /* eslint-disable @typescript-eslint/no-this-alias, no-constant-condition */
+  /* eslint-disable @typescript-eslint/no-this-alias */
   evaluate(): A {
     let current: Eval<A> = this;
     const stack: Array<(a: any) => Eval<A>> = [];
