@@ -15,3 +15,4 @@ export { Either, Left, Right } from "./either.ts";
 export { Option, None, Some } from "./option.ts";
 export { identity, TODO, NotImplementedYetError } from "./utils.ts";
 export { Eval, EvaluationError } from "./eval.ts";
+export { Reader } from "./reader.ts";
