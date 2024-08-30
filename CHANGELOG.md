@@ -1,3 +1,15 @@
+# [1.6.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.5.5...v1.6.0) (2024-08-30)
+
+
+### Bug Fixes
+
+* Upgraded various dependencies to their latest versions for improved security and functionality. ([#48](https://github.com/gabriel-bornea/monadyssey/issues/48)) ([e37ad32](https://github.com/gabriel-bornea/monadyssey/commit/e37ad324c9b35562f738dfedf6a230df1a2fd711))
+
+
+### Features
+
+* Introduced `Reader` type for enhanced dependency injection. ([#49](https://github.com/gabriel-bornea/monadyssey/issues/49)) ([866d42e](https://github.com/gabriel-bornea/monadyssey/commit/866d42e42d00bc997f60ad9879489b29b9a951b7))
+
 ## [1.5.5](https://github.com/gabriel-bornea/monadyssey/compare/v1.5.4...v1.5.5) (2024-07-24)
 
 
