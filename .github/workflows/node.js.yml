@@ -15,7 +15,9 @@ jobs:
     - uses: actions/setup-node@v3
       with:
         node-version: 'lts/*'
+
+    - name: Authenticate with npm registry
+      run: echo "//registry.npmjs.org/:_authToken={{ secrets.NPM_TOKEN }}" > ~/.npmrc
+
     - run: npm ci
     - run: npm run build
-      env:
-        NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
