@@ -1,3 +1,5 @@
+## [1.6.1](https://github.com/gabriel-bornea/monadyssey/compare/v1.6.0...v1.6.1) (2024-09-12)
+
 # [1.6.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.5.5...v1.6.0) (2024-08-30)
 
 
