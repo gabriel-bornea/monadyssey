@@ -78,7 +78,7 @@ describe("Ordering", () => {
       const onEqual = jest.fn();
       const onGreaterThan = jest.fn();
 
-      const result = Ordering.LessThan.fold(onLessThan, onEqual, onGreaterThan);
+      const result = Ordering.LessThan.match(onLessThan, onEqual, onGreaterThan);
 
       expect(result).toBe("less");
       expect(onLessThan).toHaveBeenCalled();
@@ -91,7 +91,7 @@ describe("Ordering", () => {
       const onEqual = jest.fn(() => "equal");
       const onGreaterThan = jest.fn();
 
-      const result = Ordering.Equal.fold(onLessThan, onEqual, onGreaterThan);
+      const result = Ordering.Equal.match(onLessThan, onEqual, onGreaterThan);
 
       expect(result).toBe("equal");
       expect(onEqual).toHaveBeenCalled();
@@ -104,7 +104,7 @@ describe("Ordering", () => {
       const onEqual = jest.fn();
       const onGreaterThan = jest.fn(() => "greater");
 
-      const result = Ordering.GreaterThan.fold(onLessThan, onEqual, onGreaterThan);
+      const result = Ordering.GreaterThan.match(onLessThan, onEqual, onGreaterThan);
 
       expect(result).toBe("greater");
       expect(onGreaterThan).toHaveBeenCalled();
