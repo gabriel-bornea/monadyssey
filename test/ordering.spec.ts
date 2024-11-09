@@ -72,7 +72,7 @@ describe("Ordering", () => {
     });
   });
 
-  describe("fold", () => {
+  describe("match", () => {
     it("should call onLessThan for LessThan", () => {
       const onLessThan = jest.fn(() => "less");
       const onEqual = jest.fn();
