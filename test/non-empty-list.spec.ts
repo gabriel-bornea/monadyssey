@@ -1,5 +1,6 @@
 import { NonEmptyList } from "../src";
 import { describe, expect, it } from "@jest/globals";
+import { Ordering } from "../src";
 
 describe("NonEmptyList", () => {
   afterEach(() => {
@@ -189,6 +190,162 @@ describe("NonEmptyList", () => {
 
       expect(filtered instanceof Array).toEqual(true);
       expect(filtered as Array<number>).toEqual([]);
+    });
+  });
+
+  describe("sort", () => {
+    it("should sort numbers in ascending order", () => {
+      const nel = NonEmptyList.fromArray([3, 1, 4, 1, 5]);
+      const sortedNel = nel.sort(
+        Ordering.comparing(
+          (x) => x,
+          (a, b) => a - b
+        )
+      );
+      expect(sortedNel.all).toEqual([1, 1, 3, 4, 5]);
+    });
+
+    it("should sort numbers in descending order", () => {
+      const nel = NonEmptyList.fromArray([3, 1, 4, 1, 5]);
+      const sortedNel = nel.sort(
+        Ordering.comparing(
+          (x) => x,
+          (a, b) => b - a
+        )
+      );
+      expect(sortedNel.all).toEqual([5, 4, 3, 1, 1]);
+    });
+
+    it("should sort strings alphabetically", () => {
+      const nel = NonEmptyList.fromArray(["banana", "apple", "cherry"]);
+      const sortedNel = nel.sort(
+        Ordering.comparing(
+          (x) => x,
+          (a, b) => a.localeCompare(b)
+        )
+      );
+      expect(sortedNel.all).toEqual(["apple", "banana", "cherry"]);
+    });
+
+    it("should sort complex objects based on a key", () => {
+      interface User {
+        id: number;
+        name: string;
+      }
+      const users = NonEmptyList.fromArray<User>([
+        { id: 3, name: "Charlie" },
+        { id: 1, name: "Alice" },
+        { id: 2, name: "Bob" },
+      ]);
+      const sortedUsers = users.sort(
+        Ordering.comparing(
+          (u) => u.id,
+          (a, b) => a - b
+        )
+      );
+      expect(sortedUsers.all).toEqual([
+        { id: 1, name: "Alice" },
+        { id: 2, name: "Bob" },
+        { id: 3, name: "Charlie" },
+      ]);
+    });
+
+    it("should maintain the original list unmodified", () => {
+      const nel = NonEmptyList.fromArray([3, 1, 4, 1, 5]);
+      const sortedNel = nel.sort(
+        Ordering.comparing(
+          (x) => x,
+          (a, b) => a - b
+        )
+      );
+      expect(nel.all).toEqual([3, 1, 4, 1, 5]);
+      expect(sortedNel.all).toEqual([1, 1, 3, 4, 5]);
+    });
+
+    it("should sort using a custom comparator with multiple criteria", () => {
+      interface Person {
+        age: number;
+        name: string;
+      }
+      const people = NonEmptyList.fromArray<Person>([
+        { age: 30, name: "Charlie" },
+        { age: 25, name: "Alice" },
+        { age: 30, name: "Bob" },
+      ]);
+      const compareByAgeThenName = Ordering.compareBy<Person>(
+        Ordering.comparing(
+          (p) => p.age,
+          (a, b) => a - b
+        ),
+        Ordering.comparing(
+          (p) => p.name,
+          (a, b) => a.localeCompare(b)
+        )
+      );
+      const sortedPeople = people.sort(compareByAgeThenName);
+      expect(sortedPeople.all).toEqual([
+        { age: 25, name: "Alice" },
+        { age: 30, name: "Bob" },
+        { age: 30, name: "Charlie" },
+      ]);
+    });
+
+    it("should handle sorting when all elements are equal", () => {
+      const nel = NonEmptyList.fromArray([1, 1, 1]);
+      const sortedNel = nel.sort(
+        Ordering.comparing(
+          (x) => x,
+          (a, b) => a - b
+        )
+      );
+      expect(sortedNel.all).toEqual([1, 1, 1]);
+    });
+
+    it("should handle sorting when the list has a single element", () => {
+      const nel = NonEmptyList.fromArray([42]);
+      const sortedNel = nel.sort(
+        Ordering.comparing(
+          (x) => x,
+          (a, b) => a - b
+        )
+      );
+      expect(sortedNel.all).toEqual([42]);
+    });
+
+    it("should sort using reverse ordering", () => {
+      const nel = NonEmptyList.fromArray([1, 2, 3, 4, 5]);
+      const descendingOrder = Ordering.comparing(
+        (x: number) => x,
+        (a, b) => b - a
+      );
+      const sortedNel = nel.sort(descendingOrder);
+      expect(sortedNel.all).toEqual([5, 4, 3, 2, 1]);
+    });
+
+    it("should sort complex objects with null or undefined values", () => {
+      interface Item {
+        value?: number;
+      }
+      const items = NonEmptyList.fromArray<Item>([
+        { value: 10 },
+        {},
+        { value: 5 },
+        { value: undefined },
+        { value: 20 },
+      ]);
+      const compareByValue = Ordering.comparing(
+        (item: Item) => item.value ?? 0,
+        (a, b) => a - b
+      );
+      const sortedItems = items.sort(compareByValue);
+      expect(sortedItems.all).toEqual([{}, { value: undefined }, { value: 5 }, { value: 10 }, { value: 20 }]);
+    });
+
+    it("should sort using a comparator that returns Equal for all elements", () => {
+      const nel = NonEmptyList.fromArray([3, 1, 4, 1, 5]);
+      const alwaysEqualComparator = (_a: number, _b: number) => Ordering.Equal;
+      const sortedNel = nel.sort(alwaysEqualComparator);
+      expect(sortedNel.all).toEqual([3, 1, 4, 1, 5]);
     });
   });
 });
