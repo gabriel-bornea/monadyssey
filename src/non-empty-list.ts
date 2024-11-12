@@ -1,3 +1,5 @@
+import { Ordering } from "./ordering.ts";
+
 export type Nel<A> = NonEmptyList<A>;
 
 /**
@@ -86,6 +88,18 @@ export class NonEmptyList<A> {
   public filter(f: (value: A) => boolean): NonEmptyList<A> | A[] {
     const filtered = this.all.filter(f);
     return filtered.length > 0 ? NonEmptyList.fromArray(filtered) : [];
+  }
+
+  /**
+   * Sorts the elements of the NonEmptyList based on a comparator function that returns an Ordering.
+   * Returns a new NonEmptyList with the elements sorted.
+   *
+   * @param {function(A, A): Ordering} comparator A function that compares two elements of the list and returns an Ordering.
+   * @return {NonEmptyList<A>} A new NonEmptyList with the elements sorted based on the comparator.
+   */
+  public sort(comparator: (a: A, b: A) => Ordering): NonEmptyList<A> {
+    const sortedArray = [...this.all].sort((a, b) => comparator(a, b).value);
+    return NonEmptyList.fromArray(sortedArray);
   }
 
   /**
