@@ -39,7 +39,33 @@
  * ```
  */
 export class Reader<R, A> {
-  private constructor(private f: (env: R) => A) {}
+  /**
+   * Initializes a new `Reader` instance.
+   *
+   * A `Reader` represents a computation that needs an environment `R` to produce
+   * a value of type `A`. This makes it easier to manage dependencies and side effects
+   * in a functional programming style, promoting cleaner and more maintainable code.
+   *
+   * @param {function(R): A} f - A function that takes an environment of type `R`
+   *  and returns a value of type `A`.
+   *
+   * @example
+   * // Define an environment type
+   * type Env = { apiEndpoint: string };
+   *
+   * // Define a function that uses the environment to fetch data
+   * const fetchData = (env: Env) => fetch(`${env.apiEndpoint}/data`).then(response => response.json());
+   *
+   * // Create a Reader instance with the function
+   * const reader = new Reader(fetchData);
+   *
+   * // Define an environment
+   * const env: Env = { apiEndpoint: 'https://api.example.com' };
+   *
+   * // Run the Reader with the provided environment
+   * reader.run(env).then(data => console.log(data));
+   */
+  public constructor(private f: (env: R) => A) {}
 
   /**
    * Creates a new `Reader` instance that ignores the environment and always returns

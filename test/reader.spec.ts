@@ -2,6 +2,45 @@ import { describe, expect, it } from "@jest/globals";
 import { IO, Reader } from "../src";
 
 describe("Reader", () => {
+  describe("constructor", () => {
+    it("should create a new Reader instance", () => {
+      const reader = new Reader((env: string) => env);
+      expect(reader.run("env")).toBe("env");
+    });
+
+    it("should create a new Reader instance with a custom run function", () => {
+      type Ask = { ask: () => string };
+      type Say = { say: (message: string) => string };
+
+      const greeting = new Reader<Ask & Say, string>((ctx) => {
+        const name = ctx.ask();
+        return ctx.say(`Hello ${name}`);
+      });
+
+      const ctx: Ask & Say = {
+        ask: () => "Alice",
+        say: (message) => message,
+      };
+
+      const result = greeting.run(ctx);
+      expect(result).toBe("Hello Alice");
+    });
+
+    it("should handle null or undefined environment gracefully", () => {
+      const reader = new Reader((env: any) => env);
+      expect(reader.run(null)).toBe(null);
+      expect(reader.run(undefined)).toBe(undefined);
+    });
+
+    it("should handle a complex environment object", () => {
+      type ComplexEnv = { user: { name: string; id: number }; settings: { theme: string } };
+      const reader = new Reader<ComplexEnv, string>((ctx) => `${ctx.user.name} uses ${ctx.settings.theme}`);
+      const context: ComplexEnv = { user: { name: "Alice", id: 1 }, settings: { theme: "dark" } };
+      const result = reader.run(context);
+      expect(result).toBe("Alice uses dark");
+    });
+  });
+
   describe("of", () => {
     it("it should create a new Reader ignoring the environment", () => {
       const reader = Reader.of(42);
