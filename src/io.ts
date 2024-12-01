@@ -285,13 +285,15 @@ export class IO<E, A> {
    * `false`, the operation is considered failed with the new error produced by the handler function.
    */
   refine(predicate: (a: A) => boolean, liftE: (a: A) => E): IO<E, A> {
-    this._operations.push(async (result: Ok<A> | Err<E>) => {
-      if (IO.isOk(result) && !predicate(result.value)) {
-        return IO.err(liftE(result.value));
+    const effect = new IO<E, A>();
+    effect._operations = this._operations.map((op) => async (prevResult: any) => {
+      const result = await op(prevResult);
+      if (IO.isOk(result)) {
+        return predicate(result.value) ? result : IO.err(liftE(result.value));
       }
       return result;
     });
-    return this;
+    return effect;
   }
 
   /**
