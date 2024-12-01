@@ -475,7 +475,7 @@ export class IO<E, A> {
   };
 
   /**
-   * @deprecated use `parZip` insteadX
+   * @deprecated use `parZip` instead
    * Combines two `IO` operations into a single `IO` operation that, when executed, will run both
    * operations in parallel and encapsulate their results in a tuple. If both operations succeed, the
    * resulting `IO` instance will contain an `Ok` with a tuple of the results. If one or both operations
@@ -510,7 +510,7 @@ export class IO<E, A> {
   }
 
   /**
-   * @deprecated use `parZip` insteadX
+   * @deprecated use `parZip` instead
    * Combines three `IO` operations into a single `IO` operation that, when executed, will run all
    * three operations in parallel and encapsulate their results in a tuple. If all operations succeed,
    * the resulting `IO` instance will contain an `Ok` with a tuple of the results. If any of the
