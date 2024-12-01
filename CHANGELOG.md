@@ -1,3 +1,10 @@
+## [1.7.1](https://github.com/gabriel-bornea/monadyssey/compare/v1.7.0...v1.7.1) (2024-12-01)
+
+
+### Bug Fixes
+
+* The `refine` method now creates a new `IO` instance with updated operations instead of modifying the existing instance directly. This ensures immutability, allowing for safer and more predictable composition of `IO` operations. ([#60](https://github.com/gabriel-bornea/monadyssey/issues/60)) ([f3b1ea2](https://github.com/gabriel-bornea/monadyssey/commit/f3b1ea26ea54f93ea305732a161d5ec08fef3633))
+
 # [1.7.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.6.1...v1.7.0) (2024-12-01)
 
 
