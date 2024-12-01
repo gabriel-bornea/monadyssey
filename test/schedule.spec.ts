@@ -189,6 +189,24 @@ describe("Schedule", () => {
       expect((result as Ok<number>).value).toBe(3);
     });
 
+    it("should repeat an operation created from multiple IOs", async () => {
+      let counter = 0;
+      const eff = IO.ofSync<Error, number>(() => {
+        counter += 1;
+        return counter;
+      });
+      const eff2 = IO.ofSync<Error, number>(() => 3);
+      const eff3 = IO.ofSync<Error, number>(() => 5);
+
+      const liftE = (error: Error): Error => new Error(`Unexpected error: ${error.message}`);
+
+      const op = eff.flatMap(() => eff2).flatMap(() => eff3);
+      const result = await schedule.repeat(op, liftE).runAsync();
+
+      expect(result.type).toBe("Ok");
+      expect((result as Ok<number>).value).toBe(5);
+    });
+
     it("should return the last value after the number after retries is completed", async () => {
       let counter = 0;
       const eff = IO.ofSync<Error, number>(() => {
