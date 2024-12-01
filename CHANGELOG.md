@@ -1,3 +1,16 @@
+# [1.7.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.6.1...v1.7.0) (2024-12-01)
+
+
+### Features
+
+* Introduce Ordering Type for Type-Safe Comparisons and Enhanced Sorting Functionality ([#56](https://github.com/gabriel-bornea/monadyssey/issues/56)) ([16a82b2](https://github.com/gabriel-bornea/monadyssey/commit/16a82b2037064d18834a56e589ce5af121da23f9))
+* Reader constructor is now public in order to facilitate more complex or custom use cases without relying solely on predefined static methods. ([#58](https://github.com/gabriel-bornea/monadyssey/issues/58)) ([3522b83](https://github.com/gabriel-bornea/monadyssey/commit/3522b8357eb5b6c75c9787314d2c75719f3d552f))
+
+
+### Performance Improvements
+
+* IO manages side effects internally with a single operation composed of multiple async tasks. ([#59](https://github.com/gabriel-bornea/monadyssey/issues/59)) ([01085b9](https://github.com/gabriel-bornea/monadyssey/commit/01085b96e1c816f3de3759e8f24ae50182aeeff1))
+
 ## [1.6.1](https://github.com/gabriel-bornea/monadyssey/compare/v1.6.0...v1.6.1) (2024-09-12)
 
 # [1.6.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.5.5...v1.6.0) (2024-08-30)
