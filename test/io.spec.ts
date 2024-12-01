@@ -110,6 +110,19 @@ describe("IO", () => {
       await mapped.runAsync();
       expect(sideEffect).toBe(true);
     });
+
+    it("should correctly work for large number of chained operations", async () => {
+      const effect = IO.ofSync(() => 3);
+      const mapped = effect
+        .map((num) => num * 2)
+        .map((num) => num * 3)
+        .map((num) => num * 4)
+        .map((num) => num * 5)
+        .map((num) => num * 6)
+        .map((num) => num * 7)
+        .map((num) => num * 8);
+      expect(await mapped.runAsync()).toEqual({ type: "Ok", value: 120960 });
+    });
   });
 
   describe("mapError", () => {

@@ -1,5 +1,4 @@
 import { IO } from "./io.ts";
-import { Experimental } from "./decorators.ts";
 
 /**
  * Represents a scheduling policy with configurable retries, delay factor, initial delay, and optional timeout.
@@ -76,6 +75,8 @@ export class Schedule {
   }
 
   /**
+   * @experimental
+   *
    * Wraps an IO operation with retry logic based on a defined policy and a specific condition.
    * The operation is retried with an increasing delay, which grows according to the policy factor.
    * If an operation exceeds the retry limit or fails due to other reasons, a RetryError is thrown.
@@ -91,7 +92,6 @@ export class Schedule {
    * @returns {IO<E, A>} An IO instance that encapsulates the original operation's result if successful,
    *                      or encapsulates a RetryError if the retry limit is reached without success.
    */
-  @Experimental()
   retryIf<E, A>(eff: IO<E, A>, condition: (error: E) => boolean, liftE: (error: Error) => E): IO<E, A> {
     const policy = this.policy;
     return IO.of<E, A>(async () => {
@@ -133,6 +133,8 @@ export class Schedule {
   }
 
   /**
+   * @experimental
+   *
    * Repeats the execution of an IO action based on a defined scheduling policy.
    * If the IO action succeeds, it is executed again until it either fails or the policy determines the execution should stop.
    *
@@ -147,7 +149,6 @@ export class Schedule {
    * @returns {IO<E, A>} An IO instance that encapsulates the last successful result
    *                      or a RepeatError if the action fails or exhausts the retries determined by the policy.
    */
-  @Experimental()
   repeat<E, A>(eff: IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
     const policy = this.policy;
     let timeoutId: NodeJS.Timeout | null = null;
@@ -185,6 +186,8 @@ export class Schedule {
   }
 
   /**
+   * @experimental
+   *
    * Wraps an IO operation with an optional timeout configured by the scheduler policy.
    * If a valid timeout is provided and the operation exceeds this time,
    * it encapsulates a TimeoutError within the IO instance.
@@ -199,7 +202,6 @@ export class Schedule {
    * @returns {IO<E, A>} An IO instance that either encapsulates the original operation's result
    *                      or a TimeoutError if the timeout is exceeded.
    */
-  @Experimental()
   withTimeout<E, A>(eff: IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
     const timeout = this.policy.timeout;
     if (!timeout || timeout < 1) {
