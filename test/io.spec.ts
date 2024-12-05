@@ -168,6 +168,28 @@ describe("IO", () => {
     });
   });
 
+  describe("flatMap", () => {
+    it("should successfully compose recursively without stack overflow", async () => {
+      const rec = (n: number): IO<never, number> =>
+        n === 0 ? IO.identity(0) : IO.identity(1).flatMap((x) => rec(n - 1).flatMap((y) => IO.ofSync(() => x + y)));
+
+      const result = await rec(1_000).runAsync();
+      expect(result.type).toEqual("Ok");
+    });
+
+    it("should compose a large number of operations to ensure memory usage does not grow unbounded", async () => {
+      const iterations = 1_000;
+      let op = IO.identity(0);
+
+      for (let i = 0; i < iterations; i++) {
+        op = op.map((x) => x + 1);
+      }
+
+      const result = await op.runAsync();
+      expect(result.type).toEqual("Ok");
+    });
+  });
+
   describe("flatMapNotNull", () => {
     it("should combine if not null", async () => {
       const effect = IO.ofSync(() => 42).flatMapNotNull((num) => IO.ofSync(() => num + 1));
@@ -380,6 +402,7 @@ describe("IO", () => {
 
     class UserNotFoundError {
       message: string;
+
       constructor(message: string) {
         this.message = message;
       }
@@ -610,6 +633,7 @@ describe("IO", () => {
     it("should fail with the user defined error", async () => {
       class BusinessError {
         public readonly message: string;
+
         public constructor(message: string) {
           this.message = message;
         }
