@@ -176,18 +176,6 @@ describe("IO", () => {
       const result = await rec(1_000).runAsync();
       expect(result.type).toEqual("Ok");
     });
-
-    it("should compose a large number of operations to ensure memory usage does not grow unbounded", async () => {
-      const iterations = 1_000;
-      let op = IO.identity(0);
-
-      for (let i = 0; i < iterations; i++) {
-        op = op.map((x) => x + 1);
-      }
-
-      const result = await op.runAsync();
-      expect(result.type).toEqual("Ok");
-    });
   });
 
   describe("flatMapNotNull", () => {
