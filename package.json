@@ -39,7 +39,7 @@
     "prettier": "npx prettier \"./src/**/*.{ts,tsx}\" \"./test/**/*.{ts,tsx}\" --check",
     "prettier:fix": "npm run prettier -- --write",
     "format": "npm run lint:fix && npm run prettier:fix",
-    "test": "node --expose-gc ./node_modules/.bin/jest --verbose --coverage --config jest.config.cjs --detectOpenHandles",
+    "test": "node --expose-gc --trace-uncaught ./node_modules/.bin/jest --verbose --coverage --config jest.config.cjs --detectOpenHandles",
     "build": "tsc && npm run format && vite build"
   },
   "devDependencies": {
