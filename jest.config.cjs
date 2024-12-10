@@ -1,13 +1,11 @@
 module.exports = {
-  roots: ['<rootDir>/test'],
+  testMatch: ["**/test/**/*.(spec|test).[jt]s?(x)"],
   transform: {
     '^.+\\.tsx?$': 'ts-jest',
   },
   coveragePathIgnorePatterns: [
     "simulation.ts",
-    "index.ts",
-    "vite-env.d.ts"
+    "index.ts"
   ],
-  testRegex: '(/__tests__/.*|(\\.|/)(test|spec))\\.tsx?$',
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
 };
