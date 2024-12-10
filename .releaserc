@@ -1,5 +1,5 @@
 {
-  "branches": ["main", "37-monorepo"],
+  "branches": ["main"],
   "repositoryUrl": "https://github.com/gabriel-bornea/monadyssey",
   "plugins": [
     [
