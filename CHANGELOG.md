@@ -1,3 +1,11 @@
+## [1.7.3](https://github.com/gabriel-bornea/monadyssey/compare/v1.7.2...v1.7.3) (2024-12-10)
+
+
+### Bug Fixes
+
+* Refactor project to monorepo structure while fixing build issues. ([a4c3df2](https://github.com/gabriel-bornea/monadyssey/commit/a4c3df2ba94b5353e1f9b75da58ffa39192d21bd))
+* Refactor project to monorepo structure while npm authentication. ([a8817f6](https://github.com/gabriel-bornea/monadyssey/commit/a8817f66500570b87f1dfadbf2e9add937ef5654))
+
 ## [1.7.2](https://github.com/gabriel-bornea/monadyssey/compare/v1.7.1...v1.7.2) (2024-12-10)
 
 
