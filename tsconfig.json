@@ -19,5 +19,5 @@
     "experimentalDecorators": true,
     "outDir": "build"
   },
-  "include": ["src"]
+  "include": ["packages/**/*.ts", "packages/**/*.tsx"]
 }

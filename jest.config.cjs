@@ -1,5 +1,5 @@
 module.exports = {
-  roots: ['<rootDir>/test'],
+  testMatch: ["**/test/**/*.(spec|test).[jt]s?(x)"],
   transform: {
     '^.+\\.tsx?$': 'ts-jest',
   },
@@ -8,6 +8,5 @@ module.exports = {
     "index.ts",
     "vite-env.d.ts"
   ],
-  testRegex: '(/__tests__/.*|(\\.|/)(test|spec))\\.tsx?$',
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
 };

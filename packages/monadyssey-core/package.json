@@ -1,0 +1,44 @@
+{
+  "name": "monadyssey",
+  "version": "1.7.2",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gabriel-bornea/monadyssey"
+  },
+  "keywords": [
+    "functional programming",
+    "typescript"
+  ],
+  "author": "Gabriel Bornea",
+  "contributors": [
+    {
+      "name": "Tiberiu Tofan"
+    }
+  ],
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/monadyssey.cjs",
+  "module": "./dist/monadyssey.mjs",
+  "typings": "./dist/monadyssey.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/monadyssey.mjs",
+      "require": "./dist/monadyssey.cjs",
+      "types": "./dist/monadyssey.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "prebuild": "npm run test",
+    "lint": "npx eslint \"src/**/*.{ts,tsx}\" \"test/**/*.{ts,tsx}\"",
+    "lint:fix": "npm run lint -- --fix",
+    "prettier": "npx prettier \"src/**/*.{ts,tsx}\" \"test/**/*.{ts,tsx}\" --check",
+    "prettier:fix": "npm run prettier -- --write",
+    "format": "npm run lint:fix && npm run prettier:fix",
+    "test": "npx jest --verbose --coverage --config ../../jest.config.cjs --detectOpenHandles",
+    "build": "npx tsc && npm run format && npx vite build --config vite.config.ts"
+  }
+}

@@ -1,5 +1,5 @@
 {
-  "branches": ["main"],
+  "branches": ["main", "37-monorepo"],
   "repositoryUrl": "https://github.com/gabriel-bornea/monadyssey",
   "plugins": [
     [
@@ -21,7 +21,12 @@
     ],
     "@semantic-release/release-notes-generator",
     "@semantic-release/changelog",
-    "@semantic-release/npm",
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "node ./scripts/release.js ${nextRelease.version}"
+      }
+    ],
     [
       "@semantic-release/git",
       {
