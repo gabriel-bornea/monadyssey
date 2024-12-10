@@ -1,3 +1,10 @@
+## [1.7.2](https://github.com/gabriel-bornea/monadyssey/compare/v1.7.1...v1.7.2) (2024-12-10)
+
+
+### Performance Improvements
+
+* Enhanced execution mechanics for the IO type, introducing improvements that preserve both laziness and safety while optimizing how operations are handled. ([#61](https://github.com/gabriel-bornea/monadyssey/issues/61)) ([bd71ccb](https://github.com/gabriel-bornea/monadyssey/commit/bd71ccb19c06865cb1d831d5f381a648310c0032))
+
 ## [1.7.1](https://github.com/gabriel-bornea/monadyssey/compare/v1.7.0...v1.7.1) (2024-12-01)
 
 
