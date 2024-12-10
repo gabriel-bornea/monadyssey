@@ -1,3 +1,16 @@
+# [1.8.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.7.2...v1.8.0) (2024-12-10)
+
+
+### Bug Fixes
+
+* Manually bump version in order to fix previous automatically failed releases. ([db38405](https://github.com/gabriel-bornea/monadyssey/commit/db3840527b7dc6251350ae1edff6fcc4f26c0a85))
+* Monorepo releases are bumped for each module individually. ([#62](https://github.com/gabriel-bornea/monadyssey/issues/62)) ([aa26882](https://github.com/gabriel-bornea/monadyssey/commit/aa268820541815606f85c0a40f8dddd4ce8c73d3))
+
+
+### Features
+
+* Transition to monorepo structure, this change helps manage multiple modules more effectively and supports future growth and modularity. ([e057dbe](https://github.com/gabriel-bornea/monadyssey/commit/e057dbe4f8d9334052fba9c3074026237f1872d8))
+
 ## [1.7.4](https://github.com/gabriel-bornea/monadyssey/compare/v1.7.3...v1.7.4) (2024-12-10)
 
 
