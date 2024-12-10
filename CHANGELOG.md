@@ -1,3 +1,10 @@
+## [1.7.4](https://github.com/gabriel-bornea/monadyssey/compare/v1.7.3...v1.7.4) (2024-12-10)
+
+
+### Bug Fixes
+
+* Include readme file into each module. ([07a820a](https://github.com/gabriel-bornea/monadyssey/commit/07a820a84c13600bb73f1c34e759e1a6c93ff1dc))
+
 ## [1.7.3](https://github.com/gabriel-bornea/monadyssey/compare/v1.7.2...v1.7.3) (2024-12-10)
 
 
