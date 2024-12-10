@@ -4,14 +4,9 @@
 
 ### Overview
 
-Monadyssey is a TypeScript library inspired by functional programming principles. It provides utilities for managing 
-asynchronous workflows, explicitly handling errors, and working with immutable data structures. The library is 
-designed to simplify common patterns in modern application development, offering tools that emphasize clarity, 
-flexibility, and composability.
-
-Monadyssey addresses challenges such as retrying operations, managing structured error handling, and building 
-declarative, reusable workflows. By leveraging type safety and functional paradigms, it encourages predictable 
-and maintainable code.
+**monadyssey** is the foundational module, its purpose is to addresses challenges such as retrying operations, managing 
+structured error handling, and building declarative, reusable workflows. By leveraging type safety and functional 
+paradigms, it encourages predictable and maintainable code.
 
 ### Installation
 
