@@ -5,8 +5,7 @@ module.exports = {
   },
   coveragePathIgnorePatterns: [
     "simulation.ts",
-    "index.ts",
-    "vite-env.d.ts"
+    "index.ts"
   ],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
 };
