@@ -1,5 +1,5 @@
 {
-  "name": "monadyssey",
+  "name": "monadyssey-fetch",
   "version": "1.8.0",
   "license": "MIT",
   "type": "module",
@@ -20,14 +20,14 @@
   "files": [
     "dist"
   ],
-  "main": "./dist/monadyssey.cjs",
-  "module": "./dist/monadyssey.mjs",
-  "typings": "./dist/monadyssey.d.ts",
+  "main": "./dist/monadyssey-fetch.cjs",
+  "module": "./dist/monadyssey-fetch.mjs",
+  "typings": "./dist/monadyssey-fetch.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/monadyssey.d.ts",
-      "import": "./dist/monadyssey.mjs",
-      "require": "./dist/monadyssey.cjs"
+      "types": "./dist/monadyssey-fetch.d.ts",
+      "import": "./dist/monadyssey-fetch.mjs",
+      "require": "./dist/monadyssey-fetch.cjs"
     },
     "./package.json": "./package.json"
   },
@@ -40,5 +40,8 @@
     "lint:fix": "npm run lint -- --fix",
     "prettier": "npx prettier \"src/**/*.{ts,tsx}\" \"test/**/*.{ts,tsx}\" --check",
     "prettier:fix": "npm run prettier -- --write"
+  },
+  "dependencies": {
+    "monadyssey": "^1.8.0"
   }
 }

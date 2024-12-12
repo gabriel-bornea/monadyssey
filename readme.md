@@ -12,6 +12,7 @@ flexibility, and composability.
 Monadyssey is organized into the following modules:
 
 - [**monadyssey-core**](packages/monadyssey-core/readme.md): Core library providing functional programming utilities such as `IO`, `Schedule`, `Either`, `Option`, and more.
+- [**monadyssey-fetch**](packages/monadyssey-fetch/readme.md): A fetch API wrapper that returns an `IO` instead of a `Promise`, enabling functional handling of HTTP requests with composable side effect management.
 
 ### Contributing
 Contributions are welcome! If you’d like to contribute, please see the [contribution guidelines](CONTRIBUTING.md).
