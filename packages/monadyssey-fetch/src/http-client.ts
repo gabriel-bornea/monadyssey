@@ -134,24 +134,9 @@ const request = <A = any>(uri: string, method: Method, options: Options<A> = {})
       transform = (data: any) => data as A,
     } = options;
 
-    const hs: HeadersInit = { ...headers };
-    if (
-      !hs["Content-Type"] &&
-      body &&
-      typeof body === "object" &&
-      !(
-        body instanceof FormData ||
-        body instanceof Blob ||
-        body instanceof URLSearchParams ||
-        body instanceof ArrayBuffer
-      )
-    ) {
-      hs["Content-Type"] = "application/json";
-    }
-
     const request: RequestInit = {
       method,
-      headers: hs,
+      headers: headers,
       credentials,
       body: method !== "GET" && method !== "HEAD" && body ? JSON.stringify(body) : undefined,
     };

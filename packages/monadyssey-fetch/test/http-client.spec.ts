@@ -117,8 +117,6 @@ describe("HttpClient", () => {
       const eff = await HttpClient.get("https://api.example.com/items").runAsync();
       expect(eff.type).toEqual("Ok");
 
-      console.log(eff);
-
       const result = eff as Ok<null>;
       expect(result.value).toBeNull();
     });
