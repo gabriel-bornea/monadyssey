@@ -10,7 +10,7 @@ paradigms, it encourages predictable and maintainable code.
 
 ### Installation
 
-To use Monadyssey in your project, install it via npm:
+To use `monadyssey` in your project, install it via npm:
 
 ```
 npm install monadyssey
