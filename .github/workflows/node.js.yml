@@ -17,8 +17,18 @@ jobs:
         fetch-depth: 0
     - uses: actions/setup-node@v4
       with:
-        node-version: 'lts/*'
-    - run: npm ci
+        node-version: '20'
+    - name: Clean Node Modules
+      run: rm -rf node_modules
+    - name: Install Dependencies
+      run: npm install
       env:
         NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-    - run: npm run build
+    - name: Install Rollup Native Dependency
+      run: npm install @rollup/rollup-linux-x64-gnu --force
+    - name: Build monadyssey-core
+      run: npm run build --workspace=packages/monadyssey-core
+    - name: Build monadyssey-fetch
+      run: npm run build --workspace=packages/monadyssey-fetch
+    - name: Run tests
+      run: npm run test

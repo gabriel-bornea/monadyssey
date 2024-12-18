@@ -12,12 +12,13 @@
     "isolatedModules": true,
     "noEmit": true,
     "declaration": true,
+    "declarationMap": true,
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "experimentalDecorators": true,
-    "outDir": "build"
+    "outDir": "dist"
   },
-  "include": ["packages/**/*.ts", "packages/**/*.tsx"]
+  "include": ["packages/monadyssey-core/src/**/*.ts", "packages/monadyssey-fetch/src/**/*.tsx"]
 }
