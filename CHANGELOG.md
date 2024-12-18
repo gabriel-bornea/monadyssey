@@ -1,3 +1,10 @@
+## [1.9.1](https://github.com/gabriel-bornea/monadyssey/compare/v1.9.0...v1.9.1) (2024-12-18)
+
+
+### Bug Fixes
+
+* ensure type declarations are correctly generated for release. ([#64](https://github.com/gabriel-bornea/monadyssey/issues/64)) ([6a6ed6f](https://github.com/gabriel-bornea/monadyssey/commit/6a6ed6f909e1ce4e89336e9464865ae738655766))
+
 # [1.9.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.8.0...v1.9.0) (2024-12-18)
 
 
