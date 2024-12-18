@@ -1,4 +1,4 @@
-import { IO } from "./io.ts";
+import { IO } from "./io";
 
 /**
  * Represents a scheduling policy with configurable retries, delay factor, initial delay, and optional timeout.

@@ -7,7 +7,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "moduleResolution": "node",
-    "allowImportingTsExtensions": true,
+    "allowImportingTsExtensions": false,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
@@ -20,5 +20,5 @@
     "experimentalDecorators": true,
     "outDir": "dist"
   },
-  "include": ["packages/monadyssey-core/src/**/*.ts", "packages/monadyssey-fetch/src/**/*.tsx"]
+  "include": ["packages/monadyssey-core/src/**/*.ts", "packages/monadyssey-fetch/src/**/*.ts", "packages/monadyssey-core/src/**/*.tsx", "packages/monadyssey-fetch/src/**/*.tsx"]
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@jest/globals";
 import { HttpClient } from "../src";
 import { Err, Ok } from "monadyssey";
-import { HttpError } from "../src/http-client.ts";
+import { HttpError } from "../src/http-client";
 
 describe("HttpClient", () => {
   beforeEach(() => {

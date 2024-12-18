@@ -1,5 +1,5 @@
 import { IO } from "monadyssey";
-import { Method, Options, ResponseType } from "./options.ts";
+import { Method, Options, ResponseType } from "./options";
 
 /**
  * A composable HTTP client that wraps the native `fetch` API, returning `IO` instances instead of Promises.
