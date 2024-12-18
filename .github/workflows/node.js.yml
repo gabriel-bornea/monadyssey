@@ -19,7 +19,7 @@ jobs:
       with:
         node-version: 'lts/*'
     - name: Clean Node Modules and Cache
-      run: rm -rf node_modules package-lock.json && npm cache clean --force
+      run: rm -rf node_modules && npm cache clean
     - run: npm ci
       env:
         NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
