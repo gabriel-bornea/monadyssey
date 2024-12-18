@@ -37,6 +37,6 @@
     "prettier:fix": "npm run prettier -- --write"
   },
   "dependencies": {
-    "monadyssey": "*"
+    "monadyssey": "^1.8.0"
   }
 }
