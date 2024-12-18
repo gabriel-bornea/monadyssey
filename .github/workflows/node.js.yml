@@ -18,6 +18,8 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: 'lts/*'
+    - name: Clear npm Cache
+      run: npm cache clean --force
     - run: npm ci
       env:
         NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
