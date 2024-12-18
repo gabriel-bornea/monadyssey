@@ -1,4 +1,4 @@
-import { identity } from "./utils.ts";
+import { identity } from "./utils";
 
 /**
  * Represents an optional value. Every `Option<A>` is either `Some<A>` containing a value or `None` representing absence of value.

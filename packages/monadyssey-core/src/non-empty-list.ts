@@ -1,4 +1,4 @@
-import { Ordering } from "./ordering.ts";
+import { Ordering } from "./ordering";
 
 export type Nel<A> = NonEmptyList<A>;
 

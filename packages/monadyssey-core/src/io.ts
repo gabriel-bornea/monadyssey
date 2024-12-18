@@ -1,4 +1,4 @@
-import { NonEmptyList } from "./non-empty-list.ts";
+import { NonEmptyList } from "./non-empty-list";
 
 /**
  * Represents a successful outcome of an operation.
