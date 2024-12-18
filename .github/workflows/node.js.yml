@@ -23,7 +23,7 @@ jobs:
       run: npm install --workspaces
 
     - name: Build monadyssey-core
-      run: npm run build --workspace=packages/monadyssey
+      run: npm run build --workspace=packages/monadyssey-core
 
     - name: Build monadyssey-fetch
       run: npm run build --workspace=packages/monadyssey-fetch
