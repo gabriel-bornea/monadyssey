@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.8.0...v1.9.0) (2024-12-18)
+
+
+### Features
+
+* Introduced `monadyssey-fetch` module with an HttpClient that offers a functional wrapper for the Fetch API. ([#63](https://github.com/gabriel-bornea/monadyssey/issues/63)) ([14edc05](https://github.com/gabriel-bornea/monadyssey/commit/14edc0566c560b191feed3e52f57557483d837a7))
+
 # [1.8.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.7.2...v1.8.0) (2024-12-10)
 
 
