@@ -17,12 +17,15 @@ jobs:
         fetch-depth: 0
     - uses: actions/setup-node@v4
       with:
-        node-version: 'lts/*'
+        node-version: '20'
     - name: Clean Node Modules
       run: rm -rf node_modules
     - run: npm ci
       env:
         NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-    - run: npm run build --workspace=packages/monadyssey-core
-    - run: npm run build --workspace=packages/monadyssey-fetch
-    - run: npm run test
+    - name: Build monadyssey-core
+      run: npm run build --workspace=packages/monadyssey-core
+    - name: Build monadyssey-fetch
+      run: npm run build --workspace=packages/monadyssey-fetch
+    - name: Run tests
+      run: npm run test
