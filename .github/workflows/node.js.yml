@@ -24,6 +24,8 @@ jobs:
       run: npm install
       env:
         NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    - name: Install Rollup Native Dependency
+      run: npm install @rollup/rollup-linux-x64-gnu --force
     - name: Build monadyssey-core
       run: npm run build --workspace=packages/monadyssey-core
     - name: Build monadyssey-fetch
