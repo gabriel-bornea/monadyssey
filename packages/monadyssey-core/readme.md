@@ -52,11 +52,6 @@ fine-grained control over execution.
 The `Reader` type provides a structured way to inject dependencies or shared configurations into computations, ensuring 
 clean separation of concerns and improving testability.
 
-### Contributing
-Contributions are welcome! If you’d like to contribute, please see the [contribution guidelines](CONTRIBUTING.md).
+### License
 
-### Examples
-To provide a clearer understanding of how to effectively use each component of our library, we will soon add 
-detailed real-world examples. These examples will demonstrate practical applications, showcasing step-by-step 
-usage in common scenarios. For immediate guidance, please refer to the method descriptions and inline comments 
-within the source code, which are designed to help you get started.
+This project is licensed under the MIT License.

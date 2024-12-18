@@ -146,6 +146,24 @@ describe("HttpClient", () => {
       const err = (eff as Err<HttpError>).error;
       expect(err.message).toContain("Timeout");
     });
+
+    it("should handle multiple errors from the same request gracefully", async () => {
+      const errors = Array.of(
+        { code: "ERR_1", message: "Invalid username" },
+        { code: "ERR_2", message: "Invalid email" }
+      );
+      const error = { code: "ERR_0", errors: errors };
+
+      (global.fetch as jest.Mock).mockResolvedValue(badRequest(error));
+
+      const eff = await HttpClient.get("https://api.example.com/register").runAsync();
+      expect(eff.type).toEqual("Err");
+
+      const err = (eff as Err<HttpError>).error;
+      expect(err.status).toEqual(400);
+      expect(err.body).toEqual(error);
+      expect(err.url).toEqual("https://api.example.com/register");
+    });
   });
 
   describe("post", () => {
