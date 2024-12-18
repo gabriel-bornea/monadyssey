@@ -152,7 +152,9 @@ const request = <A = any>(uri: string, method: Method, options: Options<A> = {})
           : undefined,
     };
 
-    const response: Response = await bind(IO.of(() => fetch(uri, request)).mapError((e) => toHttpError(e, uri)));
+    const response: Response = await bind(
+      IO.of(() => fetch(uri, request)).mapError((e: unknown) => toHttpError(e, uri))
+    );
 
     if (!response.ok) {
       const rb = await bind(parse(response, responseType, uri));
