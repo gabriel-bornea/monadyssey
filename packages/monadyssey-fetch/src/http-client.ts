@@ -134,11 +134,22 @@ const request = <A = any>(uri: string, method: Method, options: Options<A> = {})
       transform = (data: any) => data as A,
     } = options;
 
+    const hs = {
+      "Content-Type":
+        body && typeof body === "object" && !headers["Content-Type"] ? "application/json" : headers["Content-Type"],
+      ...headers,
+    };
+
     const request: RequestInit = {
       method,
-      headers: headers,
+      headers: hs,
       credentials,
-      body: method !== "GET" && method !== "HEAD" && body ? JSON.stringify(body) : undefined,
+      body:
+        method !== "GET" && method !== "HEAD" && body
+          ? hs["Content-Type"] === "application/json"
+            ? JSON.stringify(body)
+            : body
+          : undefined,
     };
 
     const response = await bind(IO.of(() => fetch(uri, request)).mapError((e) => toHttpError(e, uri)));
@@ -182,18 +193,6 @@ const parse = (response: Response, responseType: ResponseType, url: string): IO<
   });
 
 const toHttpError = (e: unknown, uri: string): HttpError => {
-  let message: string;
-
-  if (e instanceof Error) {
-    message = e.message;
-  } else if (typeof e === "string") {
-    message = e;
-  } else if (e && typeof e === "object" && "message" in e) {
-    message = String(e.message);
-  } else if (e && typeof e === "object" && "toString" in e && typeof e.toString === "function") {
-    message = e.toString();
-  } else {
-    message = "Unknown error";
-  }
+  const message = e instanceof Error ? e.message : typeof e === "string" ? e : "Unknown error";
   return new HttpError(500, message, null, uri);
 };
