@@ -20,7 +20,8 @@ jobs:
         node-version: '20'
     - name: Clean Node Modules
       run: rm -rf node_modules
-    - run: npm ci
+    - name: Install Dependencies
+      run: npm install
       env:
         NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     - name: Build monadyssey-core
