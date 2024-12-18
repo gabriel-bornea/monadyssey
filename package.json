@@ -21,9 +21,8 @@
     }
   ],
   "scripts": {
-    "build": "npm run format && tsc && npm run build:sequential",
+    "build": "npm run format && tsc && npm run build:packages",
     "build:packages": "npm run build --workspaces",
-    "build:sequential": "npm run build --workspace=packages/monadyssey-core && npm run build --workspace=packages/monadyssey-fetch",
     "build:parallel": "concurrently \"npm run build --workspace=packages/monadyssey-core\" \"npm run build --workspace=packages/monadyssey-fetch\"",
     "format": "npm run lint:fix && npm run prettier:fix",
     "test": "jest --verbose --coverage",
