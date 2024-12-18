@@ -124,7 +124,7 @@ export class HttpError extends Error {
 }
 
 const request = <A = any>(uri: string, method: Method, options: Options<A> = {}): IO<HttpError, Response | A> =>
-  IO.forM(async (bind) => {
+  IO.forM(async (bind: <A>(io: IO<HttpError, A>) => Promise<A>) => {
     const {
       headers = {},
       body,
