@@ -21,7 +21,7 @@
     }
   ],
   "scripts": {
-    "build": "npm run format && tsc && npm run build:packages",
+    "build": "npm run format && tsc && npm run build:parallel",
     "build:packages": "npm run build --workspaces",
     "build:parallel": "concurrently \"npm run build --workspace=packages/monadyssey-core\" \"npm run build --workspace=packages/monadyssey-fetch\"",
     "format": "npm run lint:fix && npm run prettier:fix",
