@@ -10,25 +10,25 @@ afterthoughts—addressed only when they cause failures. They rarely become part
 scattered try-catch blocks and inconsistent error management.
 
 The `IO` data type addresses these challenges head-on by encapsulating side effects into a controlled, composable 
-abstraction. It enables developers to describe computations—including their potential errors—without executing 
+abstraction. It enables us to describe computations—including their potential errors—without executing 
 them. This laziness ensures that side effects only occur when explicitly triggered, making workflows more 
 predictable, easier to test, and less error-prone.
 
 Moreover, `IO` embeds error handling into its very structure. By representing computations as operations that may 
-succeed (`Ok<A>`) or fail (`Err<E>`), it forces developers to acknowledge potential failures upfront, integrating 
+succeed (`Ok<A>`) or fail (`Err<E>`), it forces us to acknowledge potential failures upfront, integrating 
 errors as a first-class part of the domain. This approach helps avoid surprises in production by encouraging 
 thoughtful error management during development.
 
 Most importantly, `IO` is a value. As a value, `IO` is referentially transparent, meaning it behaves predictably 
-and consistently, regardless of when or where it is used. This property transforms how developers reason about 
-code, enabling them to build maintainable systems and confidently compose complex workflows.
+and consistently, regardless of when or where it is used. This property transforms how we reason about 
+code, enabling us to build maintainable systems and confidently compose complex workflows.
 
 At its core, `IO` is a container for an asynchronous computation that produces a result. This result is either:
 * A success (`Ok<A>`), encapsulating the value of type `A`.
 * A failure (`Err<E>`), encapsulating an error of type `E`.
 
 Unlike immediately executed functions, `IO` instances are lazy. They describe computations without executing them 
-until explicitly triggered (e.g., using the `runAsync` method). This laziness enables `IO` to serve as a "blueprint" 
+until explicitly triggered (e.g., using the `runAsync` method). This laziness enables `IO` to serve as a *blueprint* 
 for assembling workflows, where each operation is deferred until the entire workflow is ready to run.
 
 To better understand how to use `IO` in a real-world scenario, let’s consider an application that displays the 
@@ -94,7 +94,7 @@ Here’s how we define the `getLatitudeAndLongitude` function:
 ```typescript
 export const getLatitudeAndLongitude = (location: CurrentLocation): IO<ApplicationError, [number, number]> =>
   IO.ofSync(
-    () => location.loc.split(",").map(Number) as [number, number],
+    () => location.loc.split(",").map(Number),
     (e) => new InvalidLocationError(e instanceof Error ? e.message : "Failed to parse user location")
   ).refine(
     ([lat, lon]) => !isNaN(lat) && !isNaN(lon),
@@ -106,26 +106,12 @@ export const getLatitudeAndLongitude = (location: CurrentLocation): IO<Applicati
   * The `IO.ofSync` wraps the synchronous parsing logic.
   * If an error occurs during parsing (e.g., the `loc` string is malformed), it is captured and transformed into an
     `InvalidLocationError`.
-```typescript
-() => location.loc.split(",").map(Number) as [number, number]
-```
-
 - **Error Transformation**
   * The second argument of `IO.ofSync` converts any error into a domain-specific error.
   * This ensures that the error handling remains consistent and type-safe.
-```typescript
-(e) => new InvalidLocationError(e instanceof Error ? e.message : "Failed to parse user location")
-```
-
 - **Validation**
   * After parsing, we validate that both `latitude` and `longitude` are valid numbers.
   * If validation fails, `InvalidLocationError` is returned with a descriptive message.
-```typescript
-refine(
-  ([lat, lon]) => !isNaN(lat) && !isNaN(lon),
-  () => new InvalidLocationError("Invalid latitude or longitude values")
-)
-```
 
 `refine` allows for conditional validation of the result within the `IO`, enabling the
 creation of more complex logical flows where the outcome of an operation can be refined or altered
@@ -155,16 +141,10 @@ export const getCurrentWeatherData = (latitude: Number, longitude: Number): IO<A
   * The `HttpClient.get` method sends a GET request to the Open-Meteo API, including the latitude and longitude 
 as query parameters.
   * The API returns a response containing the current weather data, which we aim to encapsulate in the `Weather` type.
-```typescript
-`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`
-```
 - **Error Handling**
   * Any errors that occur during the HTTP request are captured and transformed into a domain-specific `WeatherRetrievalError`. 
 This ensures that the error is meaningful and tied to the operation that caused it.
   * By embedding this error handling directly in the `IO` operation, we make it easier to reason about and handle failures.
-```typescript
-mapError(e => new WeatherRetrievalError(e.message));
-```
 - **Composability**
   * The result of this function is an `IO<ApplicationError, Weather>`. This means it can be seamlessly composed with 
 other `IO` operations, enabling the creation of complex workflows without losing control over side effects or error 
@@ -310,3 +290,7 @@ The `IO` data type offers a powerful abstraction for managing side effects, erro
 predictable and structured way. By encapsulating computations as lazy, referentially transparent operations, `IO` 
 ensures **side effects** only occur when explicitly triggered. This approach promotes clean, maintainable code while 
 allowing us to handle errors as **first-class citizens** within our domain.
+
+If you'd like to see a full working example of these concepts in action, check out the [monadyssey showcase](https://github.com/gabriel-bornea/monadyssey-showcase). 
+The showcase demonstrates how to integrate `IO` into an application that retrieves and displays weather data, 
+combining functional programming principles with real-world use cases.
