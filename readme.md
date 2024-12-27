@@ -1,4 +1,5 @@
 ![CI/CD](https://github.com/gabriel-bornea/monadyssey/actions/workflows/release.yml/badge.svg)
+[![Documentation](https://img.shields.io/badge/docs-online-brightgreen)](/docs)
 
 ### Overview
 
