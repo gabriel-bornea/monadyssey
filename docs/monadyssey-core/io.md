@@ -252,13 +252,13 @@ provide different ways of handling the result:
 * `fold`: executes the IO and applies one of two functions based on the outcome:
   * A failure handler (`onFailure`) to transform the error into a value.
   * A success handler (`onSuccess`) to transform the result into a value.
-This is particularly useful when we need to normalize the result into a single type.
 ```typescript
 await this.getCurrentWeather().fold(
   (e: ApplicationError) => console.error(e.message),
   (conditions: CurrentConditions) => this.conditions = conditions
 );
 ```
+This is particularly useful when we need to normalize the result into a single type.
 * `getOrNull`: executes the `IO` and returns the result if successful or `null` if it fails. It's helpful when failure 
 details are not needed, and the presence of a value is enough.
 ```typescript
@@ -278,8 +278,8 @@ const result: CurrentConditions = await this.getCurrentWeather().getOrElse(() =>
 the error and provide an alternative value.
 ```typescript
 const result: CurrentConditions = await this.getCurrentWeather()
-  .tapError((e) => console.error(e.message))
-  .getOrHandle(() => {
+  .getOrHandle((e: ApplicationError) => {
+    // Provide a fallback value in case of an error
     return {
       city: "Bucharest",
       temperature: 23.5
