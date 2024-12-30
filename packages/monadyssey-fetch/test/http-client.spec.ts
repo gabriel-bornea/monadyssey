@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@jest/globals";
 import { HttpClient } from "../src";
 import { Err, Ok } from "monadyssey";
-import { HttpError } from "../src/http-client";
+import { AddInterceptor, ClearInterceptors, HttpError, HttpInterceptor } from "../src/http-client";
 
 describe("HttpClient", () => {
   beforeEach(() => {
@@ -853,6 +853,199 @@ describe("HttpClient", () => {
         "Request to https://api.example.com/items failed with status 500 and message Unable to parse response body"
       );
       expect(err.status).toEqual(500);
+    });
+  });
+
+  describe("HttpClient Interceptors", () => {
+    beforeEach(() => {
+      global.fetch = jest.fn();
+      ClearInterceptors();
+    });
+
+    afterEach(() => {
+      jest.resetAllMocks();
+    });
+
+    it("should call a single interceptor and modify the request headers", async () => {
+      class TestHeaderInterceptor implements HttpInterceptor {
+        intercept(req: RequestInit, next: (r: RequestInit) => Promise<Response>): Promise<Response> {
+          const newHeaders = new Headers(req.headers || {});
+          newHeaders.set("X-Interceptor-Header", "test-value");
+          return next({ ...req, headers: newHeaders });
+        }
+      }
+
+      AddInterceptor(new TestHeaderInterceptor());
+
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ success: true }));
+
+      const eff = await HttpClient.get("https://api.example.com/test").runAsync();
+      expect(eff.type).toBe("Ok");
+
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      const url = args[0];
+      const options = args[1];
+
+      expect(url).toBe("https://api.example.com/test");
+      expect(options.method).toBe("GET");
+      expect(options.credentials).toBe("include");
+      expect(options.body).toBeUndefined();
+
+      expect(options.headers).toBeInstanceOf(Headers);
+      expect((options.headers as Headers).get("X-Interceptor-Header")).toBe("test-value");
+    });
+
+    it("should allow an interceptor to short-circuit the request", async () => {
+      class ShortCircuitInterceptor implements HttpInterceptor {
+        intercept(_req: RequestInit, _next: (r: RequestInit) => Promise<Response>): Promise<Response> {
+          return Promise.resolve(
+            new Response(JSON.stringify({ message: "short-circuited" }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            })
+          );
+        }
+      }
+
+      AddInterceptor(new ShortCircuitInterceptor());
+
+      const eff = await HttpClient.get("https://api.example.com/shortcircuit").runAsync();
+      expect(eff.type).toBe("Ok");
+
+      const result = eff as Ok<any>;
+      expect(result.value).toEqual({ message: "short-circuited" });
+
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it("should call multiple interceptors in reverse order of registration", async () => {
+      class FirstInterceptor implements HttpInterceptor {
+        intercept(req: RequestInit, next: (r: RequestInit) => Promise<Response>): Promise<Response> {
+          const newHeaders = new Headers(req.headers || {});
+          newHeaders.set("X-First", "1");
+          return next({ ...req, headers: newHeaders });
+        }
+      }
+
+      class SecondInterceptor implements HttpInterceptor {
+        intercept(req: RequestInit, next: (r: RequestInit) => Promise<Response>): Promise<Response> {
+          const newHeaders = new Headers(req.headers || {});
+          newHeaders.set("X-Second", "2");
+          return next({ ...req, headers: newHeaders });
+        }
+      }
+
+      AddInterceptor(new FirstInterceptor());
+      AddInterceptor(new SecondInterceptor());
+
+      const fetch = global.fetch as jest.Mock;
+
+      fetch.mockResolvedValue(ok({ success: true }));
+
+      const eff = await HttpClient.get("https://api.example.com/test").runAsync();
+      expect(eff.type).toBe("Ok");
+
+      expect(fetch).toHaveBeenCalledTimes(1);
+
+      const args = fetch.mock.calls[0];
+      const url = args[0];
+      const options = args[1];
+
+      expect(url).toBe("https://api.example.com/test");
+      expect(options.headers).toBeInstanceOf(Headers);
+
+      const headers = options.headers as Headers;
+
+      expect(headers.get("X-First")).toBe("1");
+      expect(headers.get("X-Second")).toBe("2");
+    });
+
+    it("should allow an interceptor to handle an error thrown by fetch", async () => {
+      class RetryInterceptor implements HttpInterceptor {
+        private retried = false;
+
+        async intercept(req: RequestInit, next: (r: RequestInit) => Promise<Response>): Promise<Response> {
+          try {
+            return await next(req);
+          } catch (err) {
+            if (!this.retried) {
+              this.retried = true;
+              return await next(req);
+            }
+            throw err;
+          }
+        }
+      }
+
+      AddInterceptor(new RetryInterceptor());
+
+      (global.fetch as jest.Mock)
+        .mockRejectedValueOnce(new Error("Network Error"))
+        .mockResolvedValueOnce(ok({ success: true }));
+
+      const eff = await HttpClient.get("https://api.example.com/retry").runAsync();
+      expect(eff.type).toBe("Ok");
+
+      const result = eff as Ok<any>;
+      expect(result.value).toEqual({ success: true });
+
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("should let the interceptor transform a successful Response before returning", async () => {
+      class TransformResponseInterceptor implements HttpInterceptor {
+        async intercept(req: RequestInit, next: (r: RequestInit) => Promise<Response>): Promise<Response> {
+          const response = await next(req);
+
+          const originalJson = await response.json();
+          const newBody = JSON.stringify({ ...originalJson, addedByInterceptor: true });
+          return new Response(newBody, {
+            status: response.status,
+            headers: response.headers,
+          });
+        }
+      }
+
+      AddInterceptor(new TransformResponseInterceptor());
+
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ name: "Original" }));
+
+      const eff = await HttpClient.get<any>("https://api.example.com/transform").runAsync();
+      expect(eff.type).toEqual("Ok");
+
+      const result = eff as Ok<any>;
+      expect(result.value).toEqual({
+        name: "Original",
+        addedByInterceptor: true,
+      });
+    });
+
+    it("should allow an interceptor to catch an HTTP error and replace it with a custom response", async () => {
+      class HandleErrorInterceptor implements HttpInterceptor {
+        async intercept(req: RequestInit, next: (r: RequestInit) => Promise<Response>): Promise<Response> {
+          try {
+            return await next(req);
+          } catch {
+            return new Response(JSON.stringify({ override: true }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+        }
+      }
+
+      AddInterceptor(new HandleErrorInterceptor());
+
+      (global.fetch as jest.Mock).mockRejectedValue(new Error("Network Error"));
+
+      const eff = await HttpClient.get<any>("https://api.example.com/override").runAsync();
+      expect(eff.type).toEqual("Ok");
+
+      const result = eff as Ok<any>;
+      expect(result.value).toEqual({ override: true });
+      expect(global.fetch).toHaveBeenCalledTimes(1);
     });
   });
 });
