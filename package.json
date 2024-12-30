@@ -5,7 +5,7 @@
     "packages/*"
   ],
   "license": "MIT",
-  "version": "1.9.2",
+  "version": "1.10.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/gabriel-bornea/monadyssey"

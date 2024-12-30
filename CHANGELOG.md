@@ -1,3 +1,10 @@
+# [1.10.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.9.2...v1.10.0) (2024-12-30)
+
+
+### Features
+
+* Add support for `HttpClient` interceptors ([#66](https://github.com/gabriel-bornea/monadyssey/issues/66)) ([3804230](https://github.com/gabriel-bornea/monadyssey/commit/380423076d3e67ab000f7ddc8913b393264de2f9))
+
 ## [1.9.2](https://github.com/gabriel-bornea/monadyssey/compare/v1.9.1...v1.9.2) (2024-12-30)
 
 ## [1.9.1](https://github.com/gabriel-bornea/monadyssey/compare/v1.9.0...v1.9.1) (2024-12-18)
