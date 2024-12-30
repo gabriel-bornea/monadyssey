@@ -856,7 +856,7 @@ describe("HttpClient", () => {
     });
   });
 
-  describe("HttpClient Interceptors", () => {
+  describe("interceptors", () => {
     beforeEach(() => {
       global.fetch = jest.fn();
       ClearInterceptors();
