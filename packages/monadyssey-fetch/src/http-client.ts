@@ -1,6 +1,61 @@
 import { IO } from "monadyssey";
 import { Method, Options, ResponseType } from "./options";
 
+const interceptors: HttpInterceptor[] = [];
+
+/**
+ * Represents an HTTP interceptor that can modify or handle request and response data
+ * before and after an outgoing `fetch` call.
+ *
+ * Interceptors can:
+ *  - Transform the `RequestInit` object prior to `fetch`.
+ *  - Decide whether to short-circuit the request by returning a custom `Response`.
+ *  - Process or modify the `Response` after `fetch` completes.
+ */
+export interface HttpInterceptor {
+  /**
+   * Intercepts an outgoing HTTP request.
+   *
+   * If the interceptor intends to continue with the normal request flow, it should call `next(request)`
+   * with the (optionally modified) `RequestInit`. If the interceptor wants to stop the request entirely
+   * and return a custom result, it can return a `Promise<Response>` without invoking `next`.
+   *
+   * @param request - The configuration object for the pending `fetch` call.
+   * @param next - A function that forwards the request to the next interceptor or to `fetch` if no more interceptors remain.
+   * @returns A Promise of the resulting `Response`. This may be the final `fetch` response or a custom `Response` provided by the interceptor.
+   */
+  intercept(request: RequestInit, next: (req: RequestInit) => Promise<Response>): Promise<Response>;
+}
+
+/**
+ * Registers a new `HttpInterceptor` into the interceptor pipeline.
+ *
+ * Interceptors are applied in reverse registration order, meaning the most recently added interceptor
+ * is invoked first. This allows interceptors to wrap and control subsequent interceptors in the chain.
+ *
+ * @param interceptor - The `HttpInterceptor` instance to be registered.
+ */
+export const AddInterceptor = (interceptor: HttpInterceptor) => {
+  interceptors.push(interceptor);
+};
+
+export const ClearInterceptors = () => {
+  interceptors.splice(0, interceptors.length);
+};
+
+const runInterceptors = async (req: RequestInit, fn: (req: RequestInit) => Promise<Response>): Promise<Response> => {
+  let next = fn;
+
+  for (const interceptor of [...interceptors].reverse()) {
+    const currentNext = next;
+    next = async (req: RequestInit) => {
+      return await interceptor.intercept(req, currentNext);
+    };
+  }
+
+  return next(req);
+};
+
 /**
  * A composable HTTP client that wraps the native `fetch` API, returning `IO` instances instead of Promises.
  *
@@ -152,8 +207,8 @@ const request = <A = any>(uri: string, method: Method, options: Options<A> = {})
           : undefined,
     };
 
-    const response: Response = await bind(
-      IO.of(() => fetch(uri, request)).mapError((e: unknown) => toHttpError(e, uri))
+    const response = await bind(
+      IO.of(() => runInterceptors(request, (req) => fetch(uri, req))).mapError((e: unknown) => toHttpError(e, uri))
     );
 
     if (!response.ok) {

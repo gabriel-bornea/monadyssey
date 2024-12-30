@@ -1,12 +1,19 @@
 ![CI/CD](https://github.com/gabriel-bornea/monadyssey/actions/workflows/release.yml/badge.svg)
 [![semantic-release: angular](https://img.shields.io/badge/semantic--release-angular-e10079?logo=semantic-release)](https://github.com/semantic-release/semantic-release)
 [![npm version](https://img.shields.io/npm/v/monadyssey.svg)](https://www.npmjs.com/package/monadyssey)
+[![Documentation](https://img.shields.io/badge/docs-online-brightgreen)](../../docs/monadyssey-core)
 
 ### Overview
 
 **monadyssey** is the foundational module, its purpose is to addresses challenges such as retrying operations, managing 
 structured error handling, and building declarative, reusable workflows. By leveraging type safety and functional 
 paradigms, it encourages predictable and maintainable code.
+
+### Documentation
+
+Explore the documentation for specific features:
+
+- [IO](../../docs/monadyssey-core/io.md): Manage side effects, handle errors consistently, and compose asynchronous operations using the `IO` data type.
 
 ### Installation
 

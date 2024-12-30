@@ -1,4 +1,5 @@
 ![CI/CD](https://github.com/gabriel-bornea/monadyssey/actions/workflows/release.yml/badge.svg)
+[![Documentation](https://img.shields.io/badge/docs-online-brightgreen)](/docs)
 
 ### Overview
 
@@ -16,9 +17,3 @@ Monadyssey is organized into the following modules:
 
 ### Contributing
 Contributions are welcome! If you’d like to contribute, please see the [contribution guidelines](CONTRIBUTING.md).
-
-### Examples
-To provide a clearer understanding of how to effectively use each component of our library, we will soon add 
-detailed real-world examples. These examples will demonstrate practical applications, showcasing step-by-step 
-usage in common scenarios. For immediate guidance, please refer to the method descriptions and inline comments 
-within the source code, which are designed to help you get started.
