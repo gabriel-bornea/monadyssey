@@ -1,3 +1,5 @@
+## [1.9.2](https://github.com/gabriel-bornea/monadyssey/compare/v1.9.1...v1.9.2) (2024-12-30)
+
 ## [1.9.1](https://github.com/gabriel-bornea/monadyssey/compare/v1.9.0...v1.9.1) (2024-12-18)
 
 
