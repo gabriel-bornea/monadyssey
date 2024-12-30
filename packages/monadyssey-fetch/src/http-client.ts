@@ -28,35 +28,6 @@ export interface HttpInterceptor {
 }
 
 /**
- * Registers a new `HttpInterceptor` into the interceptor pipeline.
- *
- * Interceptors are applied in reverse registration order, meaning the most recently added interceptor
- * is invoked first. This allows interceptors to wrap and control subsequent interceptors in the chain.
- *
- * @param interceptor - The `HttpInterceptor` instance to be registered.
- */
-export const AddInterceptor = (interceptor: HttpInterceptor) => {
-  interceptors.push(interceptor);
-};
-
-export const ClearInterceptors = () => {
-  interceptors.splice(0, interceptors.length);
-};
-
-const runInterceptors = async (req: RequestInit, fn: (req: RequestInit) => Promise<Response>): Promise<Response> => {
-  let next = fn;
-
-  for (const interceptor of [...interceptors].reverse()) {
-    const currentNext = next;
-    next = async (req: RequestInit) => {
-      return await interceptor.intercept(req, currentNext);
-    };
-  }
-
-  return next(req);
-};
-
-/**
  * A composable HTTP client that wraps the native `fetch` API, returning `IO` instances instead of Promises.
  *
  * The `HttpClient` provides methods for executing HTTP requests with various HTTP verbs (`GET`, `POST`, etc.).
@@ -134,6 +105,39 @@ export const HttpClient = {
    */
   fetch: <A = any>(uri: string, method: Method, options: Options<A> = {}): IO<HttpError, Response | A> =>
     request<A>(uri, method, options),
+
+  /**
+   * Registers a new `HttpInterceptor` into the interceptor pipeline.
+   *
+   * Interceptors are applied in reverse registration order, meaning the most recently added interceptor
+   * is invoked first. This allows interceptors to wrap and control subsequent interceptors in the chain.
+   *
+   * @param interceptor - The `HttpInterceptor` instance to be registered.
+   */
+  addInterceptor: (interceptor: HttpInterceptor): void => {
+    interceptors.push(interceptor);
+  },
+
+  /**
+   * Removes a specific `HttpInterceptor` from the interceptor pipeline.
+   *
+   * This method searches for the provided interceptor instance in the pipeline
+   * and removes it if found. If the interceptor is not present, no action is taken.
+   *
+   * @param interceptor - The `HttpInterceptor` instance to remove from the pipeline.
+   *
+   * @example
+   * const interceptor = new MyInterceptor();
+   * HttpClient.addInterceptor(interceptor);
+   * // Later, if the interceptor is no longer needed:
+   * HttpClient.removeInterceptor(interceptor);
+   */
+  removeInterceptor: (interceptor: HttpInterceptor): void => {
+    const index = interceptors.indexOf(interceptor);
+    if (index >= 0) {
+      interceptors.splice(index, 1);
+    }
+  },
 };
 
 /**
@@ -223,6 +227,19 @@ const request = <A = any>(uri: string, method: Method, options: Options<A> = {})
       return transform(rb) as A;
     }
   });
+
+const runInterceptors = async (req: RequestInit, fn: (req: RequestInit) => Promise<Response>): Promise<Response> => {
+  let next = fn;
+
+  for (const interceptor of [...interceptors].reverse()) {
+    const currentNext = next;
+    next = async (req: RequestInit) => {
+      return await interceptor.intercept(req, currentNext);
+    };
+  }
+
+  return next(req);
+};
 
 const parse = (response: Response, responseType: ResponseType, url: string): IO<never, any> =>
   IO.of(async () => {

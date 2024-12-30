@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@jest/globals";
 import { HttpClient } from "../src";
 import { Err, Ok } from "monadyssey";
-import { AddInterceptor, ClearInterceptors, HttpError, HttpInterceptor } from "../src/http-client";
+import { HttpError, HttpInterceptor } from "../src/http-client";
 
 describe("HttpClient", () => {
   beforeEach(() => {
@@ -859,7 +859,7 @@ describe("HttpClient", () => {
   describe("interceptors", () => {
     beforeEach(() => {
       global.fetch = jest.fn();
-      ClearInterceptors();
+      jest.resetModules();
     });
 
     afterEach(() => {
@@ -875,7 +875,9 @@ describe("HttpClient", () => {
         }
       }
 
-      AddInterceptor(new TestHeaderInterceptor());
+      const interceptor = new TestHeaderInterceptor();
+
+      HttpClient.addInterceptor(interceptor);
 
       (global.fetch as jest.Mock).mockResolvedValue(ok({ success: true }));
 
@@ -895,6 +897,8 @@ describe("HttpClient", () => {
 
       expect(options.headers).toBeInstanceOf(Headers);
       expect((options.headers as Headers).get("X-Interceptor-Header")).toBe("test-value");
+
+      HttpClient.removeInterceptor(interceptor);
     });
 
     it("should allow an interceptor to short-circuit the request", async () => {
@@ -909,7 +913,9 @@ describe("HttpClient", () => {
         }
       }
 
-      AddInterceptor(new ShortCircuitInterceptor());
+      const interceptor = new ShortCircuitInterceptor();
+
+      HttpClient.addInterceptor(interceptor);
 
       const eff = await HttpClient.get("https://api.example.com/shortcircuit").runAsync();
       expect(eff.type).toBe("Ok");
@@ -918,6 +924,8 @@ describe("HttpClient", () => {
       expect(result.value).toEqual({ message: "short-circuited" });
 
       expect(global.fetch).not.toHaveBeenCalled();
+
+      HttpClient.removeInterceptor(interceptor);
     });
 
     it("should call multiple interceptors in reverse order of registration", async () => {
@@ -937,8 +945,11 @@ describe("HttpClient", () => {
         }
       }
 
-      AddInterceptor(new FirstInterceptor());
-      AddInterceptor(new SecondInterceptor());
+      const firstInterceptor = new FirstInterceptor();
+      const secondInterceptor = new SecondInterceptor();
+
+      HttpClient.addInterceptor(firstInterceptor);
+      HttpClient.addInterceptor(secondInterceptor);
 
       const fetch = global.fetch as jest.Mock;
 
@@ -960,6 +971,9 @@ describe("HttpClient", () => {
 
       expect(headers.get("X-First")).toBe("1");
       expect(headers.get("X-Second")).toBe("2");
+
+      HttpClient.removeInterceptor(firstInterceptor);
+      HttpClient.removeInterceptor(secondInterceptor);
     });
 
     it("should allow an interceptor to handle an error thrown by fetch", async () => {
@@ -979,7 +993,9 @@ describe("HttpClient", () => {
         }
       }
 
-      AddInterceptor(new RetryInterceptor());
+      const interceptor = new RetryInterceptor();
+
+      HttpClient.addInterceptor(interceptor);
 
       (global.fetch as jest.Mock)
         .mockRejectedValueOnce(new Error("Network Error"))
@@ -992,6 +1008,8 @@ describe("HttpClient", () => {
       expect(result.value).toEqual({ success: true });
 
       expect(global.fetch).toHaveBeenCalledTimes(2);
+
+      HttpClient.removeInterceptor(interceptor);
     });
 
     it("should let the interceptor transform a successful Response before returning", async () => {
@@ -1008,7 +1026,9 @@ describe("HttpClient", () => {
         }
       }
 
-      AddInterceptor(new TransformResponseInterceptor());
+      const interceptor = new TransformResponseInterceptor();
+
+      HttpClient.addInterceptor(interceptor);
 
       (global.fetch as jest.Mock).mockResolvedValue(ok({ name: "Original" }));
 
@@ -1020,6 +1040,8 @@ describe("HttpClient", () => {
         name: "Original",
         addedByInterceptor: true,
       });
+
+      HttpClient.removeInterceptor(interceptor);
     });
 
     it("should allow an interceptor to catch an HTTP error and replace it with a custom response", async () => {
@@ -1036,7 +1058,9 @@ describe("HttpClient", () => {
         }
       }
 
-      AddInterceptor(new HandleErrorInterceptor());
+      const interceptor = new HandleErrorInterceptor();
+
+      HttpClient.addInterceptor(interceptor);
 
       (global.fetch as jest.Mock).mockRejectedValue(new Error("Network Error"));
 
@@ -1046,6 +1070,8 @@ describe("HttpClient", () => {
       const result = eff as Ok<any>;
       expect(result.value).toEqual({ override: true });
       expect(global.fetch).toHaveBeenCalledTimes(1);
+
+      HttpClient.removeInterceptor(interceptor);
     });
   });
 });
