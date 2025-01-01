@@ -1,3 +1,10 @@
+## [1.11.2](https://github.com/gabriel-bornea/monadyssey/compare/v1.11.1...v1.11.2) (2025-01-01)
+
+
+### Bug Fixes
+
+* Export `HttpError` type from `monadyssey-fetch` module ([#69](https://github.com/gabriel-bornea/monadyssey/issues/69)) ([1910ba2](https://github.com/gabriel-bornea/monadyssey/commit/1910ba2b65c87be81413a453fbe338ab39ca8193))
+
 ## [1.11.1](https://github.com/gabriel-bornea/monadyssey/compare/v1.11.0...v1.11.1) (2025-01-01)
 
 
