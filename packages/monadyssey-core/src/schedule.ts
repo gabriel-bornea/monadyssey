@@ -113,10 +113,10 @@ export class Schedule {
         }
         const error = result.error;
         if (!condition(error)) {
-          return Promise.reject(error);
+          return Promise.reject(liftE(new ConditionalRetryError(`Retry condition not met: ${error}`)));
         }
         if (attempt >= policy.recurs - 1) {
-          return Promise.reject(error);
+          return Promise.reject(liftE(new RetryError(`Retry limit reached without success: ${error}`)));
         }
         await new Promise((resolve) => {
           timeoutId = setTimeout(resolve, delay);
@@ -283,6 +283,18 @@ export class TimeoutError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "TimeoutError";
+  }
+}
+
+/**
+ * Represents an error that occurs when a retry operation stops because the specified retry condition is not met.
+ *
+ * @extends Error
+ */
+export class ConditionalRetryError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConditionalRetryError";
   }
 }
 

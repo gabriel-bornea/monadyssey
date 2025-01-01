@@ -653,4 +653,147 @@ describe("IO", () => {
       }
     });
   });
+
+  describe("retryIf", () => {
+    it("should retry the effect the specified number of times on failure", async () => {
+      let attempt = 0;
+      const task = IO.ofSync<Error, number>(() => {
+        attempt++;
+        if (attempt < 3) {
+          throw new Error("temporary failure");
+        }
+        return 42;
+      });
+
+      const result = await task
+        .retryIf((error) => error.message === "temporary failure", { recurs: 3, delay: 0, factor: 1 })
+        .runAsync();
+
+      expect(result).toEqual({ type: "Ok", value: 42 });
+      expect(attempt).toBe(3);
+    });
+
+    it("should stop retrying when the condition is not met", async () => {
+      let attempt = 0;
+      const task = IO.ofSync<Error, number>(() => {
+        attempt++;
+        throw new Error("non-retryable error");
+      });
+
+      const result = await task
+        .retryIf((error) => error.message === "retryable error", { recurs: 5, delay: 0, factor: 1 })
+        .runAsync();
+
+      switch (result.type) {
+        case "Ok":
+          expect(result.value).toBe(-1);
+          break;
+        case "Err":
+          expect(result.error.message).toBe("Retry condition not met: Error: non-retryable error");
+          break;
+      }
+
+      expect(attempt).toBe(1);
+    });
+
+    it("should propagate the error if retries are exhausted", async () => {
+      let attempt = 0;
+      const task = IO.ofSync<Error, number>(() => {
+        attempt++;
+        throw new Error("retryable error");
+      });
+
+      const result = await task
+        .retryIf((error) => error.message === "retryable error", { recurs: 3, delay: 0, factor: 1 })
+        .runAsync();
+
+      switch (result.type) {
+        case "Ok":
+          expect(result.value).toBe(-1);
+          break;
+        case "Err":
+          expect(result.error.message).toBe("Retry limit reached without success: Error: retryable error");
+          break;
+      }
+
+      expect(attempt).toBe(3);
+    });
+
+    it("should succeed immediately if the effect succeeds on the first attempt", async () => {
+      const task = IO.ofSync<Error, number>(() => 42);
+
+      const result = await task.retryIf((_error) => true, { recurs: 5, delay: 0, factor: 1 }).runAsync();
+
+      switch (result.type) {
+        case "Err":
+          expect(result.error.message).toBe("Unknown error");
+          break;
+        case "Ok":
+          expect(result.value).toBe(42);
+          break;
+      }
+    });
+
+    it("should transform to a custom error with liftE", async () => {
+      let attempt = 0;
+      const task = IO.ofSync<Error, number>(() => {
+        attempt++;
+        throw new Error("raw error");
+      });
+
+      const result = await task
+        .retryIf(
+          (error) => error.message === "raw error",
+          { recurs: 3, delay: 0, factor: 1 },
+          (e) => ({ code: 400, message: e.message })
+        )
+        .runAsync();
+
+      switch (result.type) {
+        case "Ok":
+          expect(result.value).toBe(-1);
+          break;
+        case "Err":
+          expect(result.error).toEqual({ code: 400, message: "Retry limit reached without success: Error: raw error" });
+          break;
+      }
+
+      expect(attempt).toBe(3);
+    });
+
+    it("should not call liftE if retries are not exhausted", async () => {
+      let attempt = 0;
+      const liftE = jest.fn((e: Error) => ({ code: 400, message: e.message }));
+
+      const task = IO.ofSync<Error, number>(() => {
+        attempt++;
+        if (attempt === 1) {
+          throw new Error("temporary failure");
+        }
+        return 42;
+      });
+
+      const result = await task
+        .retryIf((error) => error.message === "temporary failure", { recurs: 3, delay: 0, factor: 1 }, liftE)
+        .runAsync();
+
+      expect(result).toEqual({ type: "Ok", value: 42 });
+      expect(liftE).not.toHaveBeenCalled();
+      expect(attempt).toBe(2);
+    });
+
+    it("should fall back to defaultPolicy when an invalid policy is provided", async () => {
+      let attempt = 0;
+      const task = IO.ofSync<Error, number>(() => {
+        attempt++;
+        throw new Error("retryable error");
+      });
+
+      await task
+        .retryIf((error) => error.message === "retryable error", { recurs: -1, delay: -100, factor: 0 })
+        .runAsync();
+
+      expect(attempt).toBe(3);
+    });
+  });
 });

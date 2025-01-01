@@ -1,4 +1,5 @@
 import { NonEmptyList } from "./non-empty-list";
+import { defaultPolicy, Policy, Schedule } from "./schedule";
 
 /**
  * Represents a successful outcome of an operation.
@@ -511,6 +512,61 @@ export class IO<E, A> {
     ];
     return effect;
   };
+
+  /**
+   * @experimental
+   * Retries the effect if the given condition is met.
+   *
+   * This method wraps the effect in a retry mechanism defined by a `Schedule` instance,
+   * using the provided retry policy. If no error transformation function (`liftE`) is provided,
+   * a default transformation will structure the error as an object containing `message`, `name`,
+   * and `stack`.
+   *
+   * @template E - The type of error that the effect can produce.
+   * @template A - The type of value that the effect can produce.
+   *
+   * @param {(error: E) => boolean} condition - A function that determines whether the effect
+   *   should be retried based on the error. Returns `true` to retry, `false` to stop retrying.
+   * @param {((error: Error) => any)} [liftE] - A function to transform the error into a user-defined
+   *   structure. Defaults to a function that returns an object with `message`, `name`, and `stack`.
+   * @param {Policy} [policy=defaultPolicy()] - The retry policy, which defines the number of retries,
+   *   delay between retries, and backoff strategy. Defaults to the `defaultPolicy`.
+   *
+   * @returns {IO<E, A>} A new `IO` instance that retries the effect based on the given condition
+   *   and policy.
+   *
+   * @example
+   * // Retry a failing HTTP request if the error message contains "retryable"
+   * HttpClient.get("/api/resource")
+   *   .retryIf((error) => error.message.includes("retryable")) // Retry condition
+   *   .runAsync();
+   *
+   * // Output (after retries are exhausted):
+   * // {
+   * //   message: "Original error message",
+   * //   name: "Error",
+   * //   stack: "Error stack trace..."
+   * // }
+   */
+  retryIf<E, A>(
+    this: IO<E, A>,
+    condition: (error: E) => boolean,
+    policy: Policy = defaultPolicy(),
+    liftE?: (error: Error) => any
+  ): IO<E, A> {
+    if (policy.recurs < 1 || policy.factor < 1 || policy.delay < 0 || (policy.timeout && policy.timeout < 0)) {
+      policy = defaultPolicy();
+    }
+    const scheduler = new Schedule(policy);
+    if (!liftE) {
+      liftE = (error: Error): any => ({
+        message: error.message,
+        name: error.name,
+        stack: error.stack,
+      });
+    }
+    return scheduler.retryIf(this, condition, liftE);
+  }
 
   /**
    * @deprecated use `parZip` instead
