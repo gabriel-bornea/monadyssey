@@ -1,3 +1,10 @@
+## [1.11.1](https://github.com/gabriel-bornea/monadyssey/compare/v1.11.0...v1.11.1) (2025-01-01)
+
+
+### Bug Fixes
+
+* Set correct `monadyssey` version in `monadyssey-fetch` module ([#68](https://github.com/gabriel-bornea/monadyssey/issues/68)) ([6a28271](https://github.com/gabriel-bornea/monadyssey/commit/6a282719405d6eb69be38e4821bb5aab6f7e4309))
+
 # [1.11.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.10.0...v1.11.0) (2025-01-01)
 
 
