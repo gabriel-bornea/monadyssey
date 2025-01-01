@@ -8,6 +8,7 @@
         "preset": "angular",
         "releaseRules": [
           {"type": "feat", "release": "minor"},
+          {"type": "feat", "scope": "enh", "release": "patch"},
           {"type": "fix", "release": "patch"},
           {"type": "perf", "release": "patch"},
           {"type": "docs", "release": "patch"},
@@ -19,7 +20,21 @@
         }
       }
     ],
-    "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/release-notes-generator",
+      {
+        "preset": "angular",
+        "presetConfig": {
+          "types": [
+            {"type": "feat", "section": "Features", "hidden": false},
+            {"type": "feat", "scope": "enh", "section": "Small Enhancements", "hidden": false},
+            {"type": "fix", "section": "Bug Fixes", "hidden": false},
+            {"type": "perf", "section": "Performance Improvements", "hidden": false},
+            {"type": "docs", "section": "Documentation", "hidden": false}
+          ]
+        }
+      }
+    ],
     "@semantic-release/changelog",
     [
       "@semantic-release/exec",

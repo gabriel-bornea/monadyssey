@@ -144,7 +144,9 @@ describe("Schedule", () => {
       const result = await schedule.retryIf(eff, condition, liftE).runAsync();
 
       expect(IO.isErr(result)).toBe(true);
-      expect((result as Err<Error>).error.message).toBe("Failed to execute operation");
+      expect((result as Err<Error>).error.message).toBe(
+        "Retry limit reached without success: RetryError: Failed to execute operation"
+      );
     });
 
     it("should reject when the timeout is exceeded", async () => {
@@ -156,7 +158,9 @@ describe("Schedule", () => {
       const result = await schedule.retryIf(eff, condition, liftE).runAsync();
 
       expect(IO.isErr(result)).toBe(true);
-      expect((result as Err<Error>).error.message).toBe("The operation timed out after 300 milliseconds");
+      expect((result as Err<Error>).error.message).toBe(
+        "Retry limit reached without success: TimeoutError: The operation timed out after 300 milliseconds"
+      );
     });
   });
 
