@@ -548,7 +548,7 @@ export class IO<E, A> {
    * //   stack: "Error stack trace..."
    * // }
    */
-  retryIf<E, A>(
+  retryIf<A>(
     this: IO<E, A>,
     condition: (error: E) => boolean,
     policy: Policy = defaultPolicy(),

@@ -1,6 +1,6 @@
 {
   "name": "monadyssey-fetch",
-  "version": "1.11.1",
+  "version": "1.10.0",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -36,6 +36,6 @@
     "prettier:fix": "npm run prettier -- --write"
   },
   "dependencies": {
-    "monadyssey": "1.11.0"
+    "monadyssey": "*"
   }
 }
