@@ -1,3 +1,10 @@
+# [1.11.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.10.0...v1.11.0) (2025-01-01)
+
+
+### Features
+
+* **enh:** Add `retryIf` to `IO` data type for configurable retries with conditions. This enhancement enables conditional retries based on a user-defined policy and error matching while supporting optional error transformation for added flexibility. ([#67](https://github.com/gabriel-bornea/monadyssey/issues/67)) ([3545152](https://github.com/gabriel-bornea/monadyssey/commit/354515262b5178a6e6f562cae408a894947f898f))
+
 # [1.10.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.9.2...v1.10.0) (2024-12-30)
 
 
