@@ -1,3 +1,12 @@
+## [1.11.3](https://github.com/gabriel-bornea/monadyssey/compare/v1.11.2...v1.11.3) (2025-01-06)
+
+
+### Bug Fixes
+
+* Document addition of `headers` field to `HttpError`. ([#73](https://github.com/gabriel-bornea/monadyssey/issues/73)) ([45a34f3](https://github.com/gabriel-bornea/monadyssey/commit/45a34f3408e224f63991b7505636c97cba7e2003))
+* Error message contains the actual error in case of a parsing failure. The error response now includes the server headers. ([#72](https://github.com/gabriel-bornea/monadyssey/issues/72)) ([61def6c](https://github.com/gabriel-bornea/monadyssey/commit/61def6cf0692be88422bb5a019e6a6886ba5387d))
+* Prevent duplicate interceptors in `HttpClient`. ([#71](https://github.com/gabriel-bornea/monadyssey/issues/71)) ([31d74fc](https://github.com/gabriel-bornea/monadyssey/commit/31d74fcb721b095e1f75a774d8638beb7152aad4))
+
 ## [1.11.2](https://github.com/gabriel-bornea/monadyssey/compare/v1.11.1...v1.11.2) (2025-01-01)
 
 

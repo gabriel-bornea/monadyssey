@@ -5,7 +5,7 @@
     "packages/*"
   ],
   "license": "MIT",
-  "version": "1.11.2",
+  "version": "1.11.3",
   "repository": {
     "type": "git",
     "url": "https://github.com/gabriel-bornea/monadyssey"
@@ -53,6 +53,6 @@
     "vite-plugin-dts": "^4.4.0"
   },
   "dependencies": {
-    "@rollup/rollup-linux-x64-gnu": "^4.29.1"
+    "@rollup/rollup-linux-x64-gnu": "^4.30.0"
   }
 }
