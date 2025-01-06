@@ -94,6 +94,7 @@ Errors are encapsulated in the HttpError type, which includes:
 * `rawMessage`: The raw error message describing the error.
 * `body`: The response body if available.
 * `url`: The request URL.
+* `headers`: The HTTP headers returned by the server, if available. In some cases, such as internal errors, the headers may not be included.
 
 ### License
 
