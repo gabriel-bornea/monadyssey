@@ -1,12 +1,19 @@
 ![CI/CD](https://github.com/gabriel-bornea/monadyssey/actions/workflows/release.yml/badge.svg)
 [![semantic-release: angular](https://img.shields.io/badge/semantic--release-angular-e10079?logo=semantic-release)](https://github.com/semantic-release/semantic-release)
 [![npm version](https://img.shields.io/npm/v/monadyssey-fetch.svg)](https://www.npmjs.com/package/monadyssey-fetch)
+[![Documentation](https://img.shields.io/badge/docs-online-brightgreen)](../../docs/monadyssey-fetch)
 
 ### Overview
 
 **monadyssey-fetch** is an HTTP client module designed to provide a functional and composable interface for making 
 HTTP requests. It leverages `IO` and other functional constructs from the **monadyssey** core to ensure predictable 
 error handling, declarative workflows, and type safety when interacting with APIs.
+
+### Documentation
+
+Explore the documentation for specific features:
+
+- [HttpClient](../../docs/monadyssey-fetch/http-client.md): Encapsulate HTTP requests as composable `IO` operations, manage side effects in a functional style, and handle errors consistently with the `HttpClient`.
 
 ### Installation
 
