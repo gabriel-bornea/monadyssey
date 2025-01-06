@@ -115,7 +115,9 @@ export const HttpClient = {
    * @param interceptor - The `HttpInterceptor` instance to be registered.
    */
   addInterceptor: (interceptor: HttpInterceptor): void => {
-    interceptors.push(interceptor);
+    if (!interceptors.includes(interceptor)) {
+      interceptors.push(interceptor);
+    }
   },
 
   /**

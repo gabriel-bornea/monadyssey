@@ -1,7 +1,6 @@
 import { describe, expect, it } from "@jest/globals";
-import { HttpClient } from "../src";
+import { HttpClient, HttpError, HttpInterceptor } from "../src";
 import { Err, Ok } from "monadyssey";
-import { HttpError, HttpInterceptor } from "../src/http-client";
 
 describe("HttpClient", () => {
   beforeEach(() => {
@@ -1070,6 +1069,42 @@ describe("HttpClient", () => {
       const result = eff as Ok<any>;
       expect(result.value).toEqual({ override: true });
       expect(global.fetch).toHaveBeenCalledTimes(1);
+
+      HttpClient.removeInterceptor(interceptor);
+    });
+
+    it("should not add the same interceptor multiple times", async () => {
+      const header = "X-Duplicate-Count";
+      class DuplicateInterceptor implements HttpInterceptor {
+        intercept(req: RequestInit, next: (r: RequestInit) => Promise<Response>): Promise<Response> {
+          const newHeaders = new Headers(req.headers || {});
+          const count = newHeaders.get(header) || "0";
+          newHeaders.set(header, (parseInt(count) + 1).toString());
+          return next({ ...req, headers: newHeaders });
+        }
+      }
+
+      const interceptor = new DuplicateInterceptor();
+
+      HttpClient.addInterceptor(interceptor);
+      HttpClient.addInterceptor(interceptor);
+
+      type body = { success: boolean };
+
+      const fetch = global.fetch as jest.Mock;
+      fetch.mockResolvedValue(ok({ success: true }));
+
+      const eff = await HttpClient.get<body>("https://api.example.com/test").runAsync();
+      expect(eff.type).toBe("Ok");
+
+      expect(fetch).toHaveBeenCalledTimes(1);
+
+      const args = fetch.mock.calls[0];
+      const options = args[1];
+
+      expect(options.headers).toBeInstanceOf(Headers);
+      const headers = options.headers as Headers;
+      expect(headers.get(header)).toBe("1");
 
       HttpClient.removeInterceptor(interceptor);
     });
