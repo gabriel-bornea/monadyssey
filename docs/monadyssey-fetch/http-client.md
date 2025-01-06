@@ -84,11 +84,7 @@ it with additional context, making it easier to debug and handle HTTP errors eff
 * `rawMessage`: The raw error message describing what went wrong.
 * `body`: The response body, if available, which may contain further details about the error.
 * `url`: The URL of the request that caused the error.
-
-Currently, the `HttpError` type does not include the response headers, which can sometimes be quite important for 
-certain operations. For instance, when retrying a failed request, the headers might contain useful information, such 
-as an `X-Retry-After` header indicating how long to wait before attempting again. This feature will most likely be added 
-soon, as it proves to be quite useful in many scenarios.
+* `headers`: The HTTP headers returned by the server, if available. In some cases, such as internal errors, the headers may not be included.
 
 ### Custom Requests with `fetch`
 The `fetch` method provides a way to perform custom HTTP requests with any HTTP method, offering full flexibility and 
