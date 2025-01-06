@@ -174,13 +174,21 @@ export class HttpError extends Error {
    */
   public readonly url: string;
 
-  constructor(status: number, rawMessage: string, body: any, url: string) {
-    super(`Request to ${url} failed with status ${status} and message ${rawMessage}`);
+  /**
+   * The HTTP headers returned by the server.
+   * @type {Record<string, string>}
+   */
+  public readonly headers?: Record<string, string>;
+
+  constructor(status: number, rawMessage: string, body: any, url: string, headers?: Record<string, string>) {
+    super(`Request to '${url}' failed with status ${status} and message: ${rawMessage}.`);
+
     this.name = "HttpError";
     this.status = status;
     this.rawMessage = rawMessage;
     this.body = body;
     this.url = url;
+    this.headers = headers;
   }
 }
 
@@ -219,7 +227,8 @@ const request = <A = any>(uri: string, method: Method, options: Options<A> = {})
 
     if (!response.ok) {
       const rb = await bind(parse(response, responseType, uri));
-      return await bind(IO.failed(new HttpError(response.status, response.statusText, rb, uri)));
+      const headers = extractHeadersFrom(response);
+      return await bind(IO.failed(new HttpError(response.status, response.statusText, rb, uri, headers)));
     }
 
     if (observe === "response") {
@@ -243,7 +252,7 @@ const runInterceptors = async (req: RequestInit, fn: (req: RequestInit) => Promi
   return next(req);
 };
 
-const parse = (response: Response, responseType: ResponseType, url: string): IO<never, any> =>
+const parse = (response: Response, responseType: ResponseType, url: string): IO<HttpError, any> =>
   IO.of(async () => {
     if (response.status === 204 || response.status === 205) {
       return null;
@@ -261,14 +270,36 @@ const parse = (response: Response, responseType: ResponseType, url: string): IO<
         case "formData":
           return await response.formData();
         default:
-          return Promise.reject(new HttpError(500, `Unsupported response type: ${responseType}`, null, url));
+          return Promise.reject(toHttpError(`Unsupported response type: ${responseType}`, url, response));
       }
-    } catch {
-      return Promise.reject(new HttpError(500, "Unable to parse response body", null, url));
+    } catch (e: unknown) {
+      return Promise.reject(toHttpError(e, url, response));
     }
   });
 
-const toHttpError = (e: unknown, uri: string): HttpError => {
-  const message = e instanceof Error ? e.message : typeof e === "string" ? e : "Unknown error";
-  return new HttpError(500, message, null, uri);
+const toHttpError = (e: unknown, uri: string, response?: Response): HttpError => {
+  const headers = extractHeadersFrom(response);
+  const body = response ? response.body : null;
+
+  const message =
+    e instanceof Error
+      ? e.message
+      : typeof e === "string"
+        ? e
+        : typeof e === "object" && e !== null && "message" in e
+          ? String((e as any).message)
+          : "An unknown error occurred.";
+
+  return new HttpError(response?.status || 500, message, body, uri, headers);
+};
+
+const extractHeadersFrom = (response?: Response): Record<string, string> => {
+  if (!response) {
+    return {};
+  }
+  try {
+    return Object.fromEntries(response.headers.entries());
+  } catch {
+    return {};
+  }
 };

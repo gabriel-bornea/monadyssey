@@ -67,7 +67,7 @@ describe("HttpClient", () => {
 
       const err = eff as Err<HttpError>;
       expect(err.error.message).toEqual(
-        "Request to https://api.example.com/items failed with status 500 and message Network Error"
+        "Request to 'https://api.example.com/items' failed with status 500 and message: Network Error."
       );
     });
 
@@ -130,7 +130,7 @@ describe("HttpClient", () => {
 
       const err = (eff as Err<HttpError>).error;
       expect(err.message).toEqual(
-        "Request to https://api.example.com/items failed with status 500 and message Unable to parse response body"
+        "Request to 'https://api.example.com/items' failed with status 200 and message: Unexpected token 'I', \"Invalid JSON\" is not valid JSON."
       );
     });
 
@@ -162,6 +162,83 @@ describe("HttpClient", () => {
       expect(err.status).toEqual(400);
       expect(err.body).toEqual(error);
       expect(err.url).toEqual("https://api.example.com/register");
+    });
+
+    it("should include headers in the error response when parsing fails", async () => {
+      const errorHeaders = new Headers({
+        "X-Request-ID": "67890",
+        "Content-Type": "application/json",
+      });
+
+      const fetch = global.fetch as jest.Mock;
+
+      fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: errorHeaders,
+        json: jest.fn().mockRejectedValue(new SyntaxError("Unexpected token I in JSON")),
+      });
+
+      const eff = await HttpClient.get("https://api.example.com/items").runAsync();
+      expect(eff.type).toEqual("Err");
+
+      const error = eff as Err<HttpError>;
+      const httpError = error.error;
+
+      expect(httpError.status).toEqual(200);
+      expect(httpError.rawMessage).toContain("Unexpected token I in JSON");
+      expect(httpError.headers).toEqual({
+        "x-request-id": "67890",
+        "content-type": "application/json",
+      });
+
+      expect(fetch).toHaveBeenCalledWith("https://api.example.com/items", {
+        method: "GET",
+        headers: {},
+        credentials: "include",
+        body: undefined,
+      });
+    });
+
+    it("should include headers in the error response for a failed request", async () => {
+      const errorHeaders = new Headers({
+        "X-Request-ID": "12345",
+        "Content-Type": "application/json",
+      });
+      const errorBody = { error: "Invalid request" };
+
+      const fetch = global.fetch as jest.Mock;
+
+      fetch.mockResolvedValue({
+        ok: false,
+        status: 400,
+        statusText: "Bad Request",
+        headers: errorHeaders,
+        json: jest.fn().mockResolvedValue(errorBody),
+      });
+
+      const eff = await HttpClient.get("https://api.example.com/items").runAsync();
+      expect(eff.type).toEqual("Err");
+
+      const error = eff as Err<HttpError>;
+      const httpError = error.error;
+
+      expect(httpError.status).toEqual(400);
+      expect(httpError.rawMessage).toEqual("Bad Request");
+      expect(httpError.headers).toEqual({
+        "x-request-id": "12345",
+        "content-type": "application/json",
+      });
+
+      expect(httpError.body).toEqual(errorBody);
+
+      expect(fetch).toHaveBeenCalledWith("https://api.example.com/items", {
+        method: "GET",
+        headers: {},
+        credentials: "include",
+        body: undefined,
+      });
     });
   });
 
@@ -206,7 +283,7 @@ describe("HttpClient", () => {
 
       const err = (eff as Err<HttpError>).error;
       expect(err.message).toEqual(
-        "Request to https://api.example.com/items failed with status 500 and message Network Error"
+        "Request to 'https://api.example.com/items' failed with status 500 and message: Network Error."
       );
     });
 
@@ -278,7 +355,7 @@ describe("HttpClient", () => {
 
       const err = (eff as Err<HttpError>).error;
       expect(err.message).toEqual(
-        "Request to https://api.example.com/items failed with status 500 and message Unable to parse response body"
+        "Request to 'https://api.example.com/items' failed with status 200 and message: Unexpected token 'I', \"Invalid JSON\" is not valid JSON."
       );
     });
 
@@ -340,7 +417,7 @@ describe("HttpClient", () => {
 
       const err = (eff as Err<HttpError>).error;
       expect(err.message).toEqual(
-        "Request to https://api.example.com/items/1 failed with status 500 and message Network Error"
+        "Request to 'https://api.example.com/items/1' failed with status 500 and message: Network Error."
       );
     });
 
@@ -416,7 +493,7 @@ describe("HttpClient", () => {
 
       const err = (eff as Err<HttpError>).error;
       expect(err.message).toEqual(
-        "Request to https://api.example.com/items/1 failed with status 500 and message Unable to parse response body"
+        "Request to 'https://api.example.com/items/1' failed with status 200 and message: Unexpected token 'I', \"Invalid JSON\" is not valid JSON."
       );
     });
   });
@@ -462,7 +539,7 @@ describe("HttpClient", () => {
 
       const err = (eff as Err<HttpError>).error;
       expect(err.message).toEqual(
-        "Request to https://api.example.com/items/1 failed with status 500 and message Network Error"
+        "Request to 'https://api.example.com/items/1' failed with status 500 and message: Network Error."
       );
     });
 
@@ -538,7 +615,7 @@ describe("HttpClient", () => {
 
       const err = (eff as Err<HttpError>).error;
       expect(err.message).toEqual(
-        "Request to https://api.example.com/items/1 failed with status 500 and message Unable to parse response body"
+        "Request to 'https://api.example.com/items/1' failed with status 200 and message: Unexpected token 'I', \"Invalid JSON\" is not valid JSON."
       );
     });
   });
@@ -582,7 +659,7 @@ describe("HttpClient", () => {
 
       const err = (eff as Err<HttpError>).error;
       expect(err.message).toEqual(
-        "Request to https://api.example.com/items/1 failed with status 500 and message Network Error"
+        "Request to 'https://api.example.com/items/1' failed with status 500 and message: Network Error."
       );
     });
 
@@ -647,7 +724,7 @@ describe("HttpClient", () => {
 
       const err = (eff as Err<HttpError>).error;
       expect(err.message).toEqual(
-        "Request to https://api.example.com/items/1 failed with status 500 and message Unable to parse response body"
+        "Request to 'https://api.example.com/items/1' failed with status 200 and message: Unexpected token 'I', \"Invalid JSON\" is not valid JSON."
       );
     });
   });
@@ -710,7 +787,7 @@ describe("HttpClient", () => {
 
       const err = (eff as Err<HttpError>).error;
       expect(err.message).toEqual(
-        "Request to https://api.example.com/items failed with status 500 and message Network Error"
+        "Request to 'https://api.example.com/items' failed with status 500 and message: Network Error."
       );
     });
 
@@ -834,9 +911,9 @@ describe("HttpClient", () => {
 
       const err = (eff as Err<HttpError>).error;
       expect(err.message).toEqual(
-        "Request to https://api.example.com/items failed with status 500 and message Unsupported response type: unsupported"
+        "Request to 'https://api.example.com/items' failed with status 200 and message: Unsupported response type: unsupported."
       );
-      expect(err.status).toEqual(500);
+      expect(err.status).toEqual(200);
     });
 
     it("should handle parsing errors gracefully", async () => {
@@ -849,9 +926,9 @@ describe("HttpClient", () => {
 
       const err = (eff as Err<HttpError>).error;
       expect(err.message).toEqual(
-        "Request to https://api.example.com/items failed with status 500 and message Unable to parse response body"
+        "Request to 'https://api.example.com/items' failed with status 200 and message: Unexpected token 'I', \"Invalid JSON\" is not valid JSON."
       );
-      expect(err.status).toEqual(500);
+      expect(err.status).toEqual(200);
     });
   });
 
