@@ -108,7 +108,7 @@ export abstract class Eval<A> {
    *
    * @example
    * // Creates an immediate operation with an initial value
-   * const immediateEval = Eval.immediate(42);
+   * const immediateEval = Eval.now(42);
    *
    * // Transforms the value by adding 1
    * const mappedEval = immediateEval.map(value => value + 1);
@@ -136,10 +136,10 @@ export abstract class Eval<A> {
    *
    * @example
    * // Creates an immediate operation with an initial value
-   * const immediateEval = Eval.immediate(42);
+   * const immediateEval = Eval.now(42);
    *
    * // Composes the initial operation with another operation that adds 1 and wraps it in Eval
-   * const flatMappedEval = immediateEval.flatMap(value => Eval.immediate(value + 1));
+   * const flatMappedEval = immediateEval.flatMap(value => Eval.now(value + 1));
    *
    * // Evaluates the composed operation
    * console.log(flatMappedEval.evaluate()); // Logs 43
@@ -165,7 +165,7 @@ export abstract class Eval<A> {
    * const deferredEval = Eval.defer(() => 21);
    *
    * // Composes the deferred operation with another operation
-   * const composedEval = deferredEval.flatMap(value => Eval.immediate(value * 2));
+   * const composedEval = deferredEval.flatMap(value => Eval.now(value * 2));
    *
    * // Evaluates the composed operation
    * console.log(composedEval.evaluate()); // Logs 42

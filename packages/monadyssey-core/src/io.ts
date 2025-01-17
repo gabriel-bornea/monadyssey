@@ -569,6 +569,52 @@ export class IO<E, A> {
   }
 
   /**
+   * Handles both the success (`Ok`) and failure (`Err`) cases of the current `IO` computation
+   * and returns a new `IO` instance based on the provided handlers.
+   *
+   * This method allows branching logic for both `Ok` and `Err` scenarios, enabling seamless
+   * composition of computations. It is a non-terminal operation, meaning the returned `IO`
+   * can be further composed and executed lazily.
+   *
+   * @template E - The error type of the current `IO`.
+   * @template F - The error type of the resulting `IO` after applying the handlers.
+   * @template A - The success type of the current `IO`.
+   * @template B - The success type of the resulting `IO` after applying the handlers.
+   *
+   * @param {function(E): IO<F, B>} onError - A handler function to process the `Err` case.
+   *        It receives the error value and returns a new `IO` instance for further computation.
+   * @param {function(A): IO<F, B>} onSuccess - A handler function to process the `Ok` case.
+   *        It receives the success value and returns a new `IO` instance for further computation.
+   *
+   * @returns {IO<F, B>} A new `IO` instance representing the result of applying the appropriate
+   *          handler (`onError` or `onSuccess`) to the current computation.
+   *
+   * @example
+   * const task: IO<string, number> = IO.ofSync(() => 42);
+   *
+   * const result = await task.match(
+   *   (err) => IO.failed(`Recovered from error: ${err}`),
+   *   (value) => IO.identity(value * 2)
+   * ).runAsync();
+   *
+   * console.log(result); // { type: "Ok", value: 84 }
+   */
+  match<E, F, A, B>(this: IO<E, A>, onError: (e: E) => IO<F, B>, onSuccess: (a: A) => IO<F, B>): IO<F, B> {
+    const effect = new IO<F, B>();
+    effect._operations = [
+      ...this._operations,
+      async (prev: Err<E> | Ok<A>): Promise<Err<F> | Ok<B>> => {
+        if (prev.type === "Ok") {
+          return await onSuccess(prev.value).runAsync();
+        } else {
+          return await onError(prev.error).runAsync();
+        }
+      },
+    ];
+    return effect;
+  }
+
+  /**
    * @deprecated use `parZip` instead
    * Combines two `IO` operations into a single `IO` operation that, when executed, will run both
    * operations in parallel and encapsulate their results in a tuple. If both operations succeed, the
@@ -912,7 +958,7 @@ export class IO<E, A> {
    * @template E The type of the error that may be produced by the operation if it fails.
    * @template A The type of the result that may be produced by the operation upon success.
    * @template B The common return type into which both success and failure results are transformed.
-   * @param {function(e: E): B} onFailure A function to be applied if the operation fails, transforming
+   * @param {function(e: E): B} onError A function to be applied if the operation fails, transforming
    * the error into a value of type `B`.
    * @param {function(a: A): B} onSuccess A function to be applied if the operation succeeds, transforming
    * the result into a value of type `B`.
@@ -920,12 +966,12 @@ export class IO<E, A> {
    * function based on the outcome of the `IO` operation. This provides a unified type `B` as the final
    * result, abstracting over the success/failure dichotomy.
    */
-  fold = async <B>(onFailure: (e: E) => B, onSuccess: (a: A) => B): Promise<B> => {
+  fold = async <B>(onError: (e: E) => B, onSuccess: (a: A) => B): Promise<B> => {
     const result = await this.runAsync();
     if (IO.isOk(result)) {
       return onSuccess(result.value);
     } else {
-      return onFailure(result.error);
+      return onError(result.error);
     }
   };
 

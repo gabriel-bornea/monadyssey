@@ -796,4 +796,101 @@ describe("IO", () => {
       expect(attempt).toBe(3);
     });
   });
+
+  describe("match", () => {
+    it("should handle the success case and transform it", async () => {
+      const task: IO<string, number> = IO.ofSync(() => 42).match(
+        (error) => IO.failed(`Recovered from: ${error}`),
+        (value) => IO.identity(value * 2)
+      );
+
+      const result = await task.runAsync();
+
+      expect(IO.isOk(result)).toBe(true);
+      expect((result as Ok<number>).value).toBe(84);
+    });
+
+    it("should handle the failure case and recover", async () => {
+      const task = IO.failed("Original Error").match(
+        (error) => IO.identity(`Recovered from: ${error}`),
+        (value) => IO.identity(`Success with: ${value}`)
+      );
+
+      const result = await task.runAsync();
+
+      expect(IO.isOk(result)).toBe(true);
+      expect((result as Ok<string>).value).toBe("Recovered from: Original Error");
+    });
+
+    it("should propagate a transformed failure", async () => {
+      const task: IO<string, string> = IO.failed("Original Error").match(
+        (error) => IO.failed(`Transformed Error: ${error}`),
+        (value) => IO.identity(`Success with: ${value}`)
+      );
+
+      const result = await task.runAsync();
+
+      expect(IO.isErr(result)).toBe(true);
+      expect((result as Err<string>).error).toBe("Transformed Error: Original Error");
+    });
+
+    it("should propagate a success unchanged if no transformation is applied", async () => {
+      const task: IO<string, number> = IO.ofSync(() => 42).match(
+        (error) => IO.failed(`Recovered from: ${error}`),
+        (value) => IO.identity(value)
+      );
+
+      const result = await task.runAsync();
+
+      expect(IO.isOk(result)).toBe(true);
+      expect((result as Ok<number>).value).toBe(42);
+    });
+
+    it("should compose operations correctly with nested match calls", async () => {
+      const task: IO<string, number> = IO.ofSync(() => 42).match(
+        (error) => IO.failed(`First recovery from: ${error}`),
+        (value) =>
+          IO.identity(value).match(
+            () => IO.failed("Second recovery failed"),
+            (innerValue) => IO.identity(innerValue + 10)
+          )
+      );
+
+      const result = await task.runAsync();
+
+      expect(IO.isOk(result)).toBe(true);
+      expect((result as Ok<number>).value).toBe(52);
+    });
+
+    it("should short-circuit properly in a nested match with a failure", async () => {
+      const task: IO<string, string> = IO.failed("Outer Failure").match(
+        (error) =>
+          IO.failed(`Recovered: ${error}`).match(
+            () => IO.failed("Inner failure"),
+            (value) => IO.identity(`Inner recovery: ${value}`)
+          ),
+        (value) => IO.identity(`Success: ${value}`)
+      );
+
+      const result = await task.runAsync();
+
+      expect(IO.isErr(result)).toBe(true);
+      expect((result as Err<string>).error).toBe("Inner failure");
+    });
+
+    it("should compose a 'match' operation further", async () => {
+      const task = IO.ofSync(() => 42)
+        .flatMap((value) => IO.identity(value * 2))
+        .match(
+          (error) => IO.failed<string, number>(`Recovered from: ${error}`),
+          (value) => IO.identity(value * 2)
+        )
+        .map((value) => value - 1);
+
+      const result = await task.runAsync();
+
+      expect(IO.isOk(result)).toBe(true);
+      expect((result as Ok<number>).value).toBe(167);
+    });
+  });
 });
