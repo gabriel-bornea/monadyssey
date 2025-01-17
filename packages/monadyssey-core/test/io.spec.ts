@@ -884,12 +884,13 @@ describe("IO", () => {
         .match(
           (error) => IO.failed<string, number>(`Recovered from: ${error}`),
           (value) => IO.identity(value * 2)
-        ).map(value => value - 1);
+        )
+        .map((value) => value - 1);
 
       const result = await task.runAsync();
 
       expect(IO.isOk(result)).toBe(true);
       expect((result as Ok<number>).value).toBe(167);
-    })
+    });
   });
 });
