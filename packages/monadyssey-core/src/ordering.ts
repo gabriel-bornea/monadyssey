@@ -342,12 +342,14 @@ export class Ordering {
    * );
    *
    * console.log(fruits);
-   * // Output: [ 'kiwi', 'date', 'apple', 'banana', 'cherry' ]
+   * // Output: [ 'date', 'kiwi', 'apple', 'banana', 'cherry' ]
    * // Explanation:
-   * // - 'kiwi' has length 4
    * // - 'date' has length 4
-   * // - 'kiwi' comes before 'date' alphabetically
-   * // - 'apple', 'banana', and 'cherry' have length 5
+   * // - 'kiwi' has length 4
+   * // - 'date' comes before 'kiwi' alphabetically
+   * // - 'apple' has length 5
+   * // - 'banana' and 'cherry' have length 6
+   * // - 'banana' comes before 'cherry' alphabetically
    * // - They are sorted alphabetically among themselves
    */
   concat(other: Ordering): Ordering {
@@ -381,14 +383,6 @@ export class Ordering {
    * const result1 = Ordering.from(5 - 10); // Returns Ordering.LessThan
    * const result2 = Ordering.from(10 - 5); // Returns Ordering.GreaterThan
    * const result3 = Ordering.from(5 - 5);  // Returns Ordering.Equal
-   *
-   * // Using the Ordering to make decisions
-   * result1.match(
-   *   () => console.log('First value is less than second value'),
-   *   () => console.log('Values are equal'),
-   *   () => console.log('First value is greater than second value')
-   * );
-   * // Output: 'First value is less than second value'
    *
    * @example
    * // Example: Handling invalid input (NaN)
