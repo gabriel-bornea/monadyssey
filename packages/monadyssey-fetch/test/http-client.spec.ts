@@ -39,7 +39,6 @@ describe("HttpClient", () => {
 
       expect(result.value).toEqual(item);
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        "__skipInterceptors": true,
         method: "GET",
         headers: {},
         credentials: "include",
@@ -80,7 +79,6 @@ describe("HttpClient", () => {
       await HttpClient.get<typeof item>("https://api.example.com/items", { headers }).runAsync();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        "__skipInterceptors": true,
         method: "GET",
         headers: { Authorization: "Bearer token" },
         credentials: "include",
@@ -196,7 +194,6 @@ describe("HttpClient", () => {
       });
 
       expect(fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        "__skipInterceptors": true,
         method: "GET",
         headers: {},
         credentials: "include",
@@ -237,7 +234,6 @@ describe("HttpClient", () => {
       expect(httpError.body).toEqual(errorBody);
 
       expect(fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        "__skipInterceptors": true,
         method: "GET",
         headers: {},
         credentials: "include",
@@ -257,7 +253,6 @@ describe("HttpClient", () => {
       const result = eff as Ok<typeof item>;
       expect(result.value).toEqual(item);
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        "__skipInterceptors": true,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -300,7 +295,6 @@ describe("HttpClient", () => {
       await HttpClient.post<typeof item>("https://api.example.com/items", { name: "New Item" }, { headers }).runAsync();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        "__skipInterceptors": true,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -374,7 +368,6 @@ describe("HttpClient", () => {
       }).runAsync();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        "__skipInterceptors": true,
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         credentials: "include",
@@ -396,7 +389,6 @@ describe("HttpClient", () => {
       const result = eff as Ok<typeof item>;
       expect(result.value).toEqual(item);
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
-        "__skipInterceptors": true,
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -441,7 +433,6 @@ describe("HttpClient", () => {
       ).runAsync();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
-        "__skipInterceptors": true,
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -520,7 +511,6 @@ describe("HttpClient", () => {
       const result = eff as Ok<typeof item>;
       expect(result.value).toEqual(item);
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
-        "__skipInterceptors": true,
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -565,7 +555,6 @@ describe("HttpClient", () => {
       ).runAsync();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
-        "__skipInterceptors": true,
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -642,7 +631,6 @@ describe("HttpClient", () => {
       const result = eff as Ok<typeof item>;
       expect(result.value).toEqual(item);
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
-        "__skipInterceptors": true,
         method: "DELETE",
         headers: {},
         credentials: "include",
@@ -683,7 +671,6 @@ describe("HttpClient", () => {
       await HttpClient.delete<typeof item>("https://api.example.com/items/1", { headers }).runAsync();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
-        "__skipInterceptors": true,
         method: "DELETE",
         headers: {
           Authorization: "Bearer token",
@@ -753,7 +740,6 @@ describe("HttpClient", () => {
       expect(result.value.ok).toBe(true);
       expect(result.value.status).toBe(200);
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        "__skipInterceptors": true,
         method: "HEAD",
         headers: {},
         credentials: "include",
@@ -771,7 +757,6 @@ describe("HttpClient", () => {
       const result = eff as Ok<typeof optionsResponse>;
       expect(result.value).toEqual(optionsResponse);
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        "__skipInterceptors": true,
         method: "OPTIONS",
         headers: {},
         credentials: "include",
@@ -816,7 +801,6 @@ describe("HttpClient", () => {
       }).runAsync();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        "__skipInterceptors": true,
         method: "POST",
         headers: {
           "Authorization": "Bearer token",
@@ -1200,6 +1184,45 @@ describe("HttpClient", () => {
       expect(headers.get(header)).toBe("1");
 
       HttpClient.removeInterceptor(interceptor);
+    });
+  });
+
+  describe("interceptor chain", () => {
+    let callCount = 0;
+    class SelfNestingInterceptor implements HttpInterceptor {
+      async intercept(req: RequestInit, next: (req: RequestInit) => Promise<Response>): Promise<Response> {
+        callCount++;
+        await HttpClient.get("https://api.example.com/nested").runAsync();
+        return next(req);
+      }
+    }
+
+    const interceptor = new SelfNestingInterceptor();
+
+    beforeEach(() => {
+      callCount = 0;
+      jest.clearAllMocks();
+      HttpClient.addInterceptor(interceptor);
+      global.fetch = jest.fn().mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ success: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        )
+      );
+    });
+
+    afterEach(() => {
+      HttpClient.removeInterceptor(interceptor);
+    });
+
+    it("should call the interceptor only once per outer request even with nested calls", async () => {
+      const result = await HttpClient.get("https://api.example.com/test").runAsync();
+      console.log(result);
+      expect(result.type).toBe("Ok");
+      expect(callCount).toBe(1);
+      expect((global.fetch as jest.Mock).mock.calls.length).toBe(2);
     });
   });
 });
