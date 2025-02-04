@@ -39,6 +39,7 @@ describe("HttpClient", () => {
 
       expect(result.value).toEqual(item);
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
+        "__skipInterceptors": true,
         method: "GET",
         headers: {},
         credentials: "include",
@@ -79,6 +80,7 @@ describe("HttpClient", () => {
       await HttpClient.get<typeof item>("https://api.example.com/items", { headers }).runAsync();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
+        "__skipInterceptors": true,
         method: "GET",
         headers: { Authorization: "Bearer token" },
         credentials: "include",
@@ -194,6 +196,7 @@ describe("HttpClient", () => {
       });
 
       expect(fetch).toHaveBeenCalledWith("https://api.example.com/items", {
+        "__skipInterceptors": true,
         method: "GET",
         headers: {},
         credentials: "include",
@@ -234,6 +237,7 @@ describe("HttpClient", () => {
       expect(httpError.body).toEqual(errorBody);
 
       expect(fetch).toHaveBeenCalledWith("https://api.example.com/items", {
+        "__skipInterceptors": true,
         method: "GET",
         headers: {},
         credentials: "include",
@@ -253,6 +257,7 @@ describe("HttpClient", () => {
       const result = eff as Ok<typeof item>;
       expect(result.value).toEqual(item);
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
+        "__skipInterceptors": true,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -295,6 +300,7 @@ describe("HttpClient", () => {
       await HttpClient.post<typeof item>("https://api.example.com/items", { name: "New Item" }, { headers }).runAsync();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
+        "__skipInterceptors": true,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -368,6 +374,7 @@ describe("HttpClient", () => {
       }).runAsync();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
+        "__skipInterceptors": true,
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         credentials: "include",
@@ -389,6 +396,7 @@ describe("HttpClient", () => {
       const result = eff as Ok<typeof item>;
       expect(result.value).toEqual(item);
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
+        "__skipInterceptors": true,
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -433,6 +441,7 @@ describe("HttpClient", () => {
       ).runAsync();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
+        "__skipInterceptors": true,
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -511,6 +520,7 @@ describe("HttpClient", () => {
       const result = eff as Ok<typeof item>;
       expect(result.value).toEqual(item);
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
+        "__skipInterceptors": true,
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -555,6 +565,7 @@ describe("HttpClient", () => {
       ).runAsync();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
+        "__skipInterceptors": true,
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -631,6 +642,7 @@ describe("HttpClient", () => {
       const result = eff as Ok<typeof item>;
       expect(result.value).toEqual(item);
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
+        "__skipInterceptors": true,
         method: "DELETE",
         headers: {},
         credentials: "include",
@@ -671,6 +683,7 @@ describe("HttpClient", () => {
       await HttpClient.delete<typeof item>("https://api.example.com/items/1", { headers }).runAsync();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
+        "__skipInterceptors": true,
         method: "DELETE",
         headers: {
           Authorization: "Bearer token",
@@ -740,6 +753,7 @@ describe("HttpClient", () => {
       expect(result.value.ok).toBe(true);
       expect(result.value.status).toBe(200);
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
+        "__skipInterceptors": true,
         method: "HEAD",
         headers: {},
         credentials: "include",
@@ -757,6 +771,7 @@ describe("HttpClient", () => {
       const result = eff as Ok<typeof optionsResponse>;
       expect(result.value).toEqual(optionsResponse);
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
+        "__skipInterceptors": true,
         method: "OPTIONS",
         headers: {},
         credentials: "include",
@@ -801,6 +816,7 @@ describe("HttpClient", () => {
       }).runAsync();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
+        "__skipInterceptors": true,
         method: "POST",
         headers: {
           "Authorization": "Bearer token",
