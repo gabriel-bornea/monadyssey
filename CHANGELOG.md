@@ -1,3 +1,15 @@
+# [1.12.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.11.3...v1.12.0) (2025-02-04)
+
+
+### Bug Fixes
+
+* Fix infinite interceptor recursion causing blocked HTTP requests. ([#77](https://github.com/gabriel-bornea/monadyssey/issues/77)) ([31f006a](https://github.com/gabriel-bornea/monadyssey/commit/31f006aba746e1160d5dfd68b33fd51c72530dff))
+
+
+### Features
+
+* Introduce match to handle both success and error cases with branching logic in IO data type. This is a non-terminal operation, meaning the returned IO can be further composed and executed lazily. ([#75](https://github.com/gabriel-bornea/monadyssey/issues/75)) ([230024c](https://github.com/gabriel-bornea/monadyssey/commit/230024c98fffd0b69706b5f6279f4738d99c3103))
+
 ## [1.11.3](https://github.com/gabriel-bornea/monadyssey/compare/v1.11.2...v1.11.3) (2025-01-06)
 
 
