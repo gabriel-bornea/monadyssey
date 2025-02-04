@@ -239,20 +239,26 @@ const request = <A = any>(uri: string, method: Method, options: Options<A> = {})
     }
   });
 
+let interceptorChainActive = false;
+
 const runInterceptors = async (req: RequestInit, fn: (req: RequestInit) => Promise<Response>): Promise<Response> => {
-  if ((req as any).__skipInterceptors) {
+  if (interceptorChainActive) {
     return fn(req);
   }
 
-  let next = fn;
-  for (const interceptor of [...interceptors].reverse()) {
-    const currentNext = next;
-    next = async (req: RequestInit) => {
-      return await interceptor.intercept(req, currentNext);
-    };
+  interceptorChainActive = true;
+  try {
+    let next = fn;
+    for (const interceptor of [...interceptors].reverse()) {
+      const currentNext = next;
+      next = async (req: RequestInit) => {
+        return await interceptor.intercept(req, currentNext);
+      };
+    }
+    return next(req);
+  } finally {
+    interceptorChainActive = false;
   }
-
-  return next({ ...req, __skipInterceptors: true } as any);
 };
 
 const parse = (response: Response, responseType: ResponseType, url: string): IO<HttpError, any> =>
