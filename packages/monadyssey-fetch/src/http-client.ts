@@ -239,9 +239,15 @@ const request = <A = any>(uri: string, method: Method, options: Options<A> = {})
     }
   });
 
-const runInterceptors = async (req: RequestInit, fn: (req: RequestInit) => Promise<Response>): Promise<Response> => {
-  let next = fn;
+const __processed = new WeakSet<RequestInit>();
 
+const runInterceptors = async (req: RequestInit, fn: (req: RequestInit) => Promise<Response>): Promise<Response> => {
+  if (__processed.has(req)) {
+    return fn(req);
+  }
+  __processed.add(req);
+
+  let next = fn;
   for (const interceptor of [...interceptors].reverse()) {
     const currentNext = next;
     next = async (req: RequestInit) => {
