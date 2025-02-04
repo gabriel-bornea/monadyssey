@@ -1219,7 +1219,6 @@ describe("HttpClient", () => {
 
     it("should call the interceptor only once per outer request even with nested calls", async () => {
       const result = await HttpClient.get("https://api.example.com/test").runAsync();
-      console.log(result);
       expect(result.type).toBe("Ok");
       expect(callCount).toBe(1);
       expect((global.fetch as jest.Mock).mock.calls.length).toBe(2);
