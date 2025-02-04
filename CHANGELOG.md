@@ -1,3 +1,10 @@
+## [1.12.1](https://github.com/gabriel-bornea/monadyssey/compare/v1.12.0...v1.12.1) (2025-02-04)
+
+
+### Bug Fixes
+
+* Fix infinite recursion causing blocked HTTP requests when interceptors are used. ([#78](https://github.com/gabriel-bornea/monadyssey/issues/78)) ([1bcbce3](https://github.com/gabriel-bornea/monadyssey/commit/1bcbce3848fb1112143c773b53a295fa2178cb6c))
+
 # [1.12.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.11.3...v1.12.0) (2025-02-04)
 
 
