@@ -22,7 +22,7 @@ describe("Schedule", () => {
             delay: 100,
             timeout: 300,
           })
-      ).toThrowError(PolicyValidationError);
+      ).toThrow(PolicyValidationError);
     });
 
     it("should not create a new schedule instance with an invalid factor property", () => {
@@ -34,7 +34,7 @@ describe("Schedule", () => {
             delay: 100,
             timeout: 300,
           })
-      ).toThrowError(PolicyValidationError);
+      ).toThrow(PolicyValidationError);
     });
 
     it("should not create a new schedule instance with an invalid delay property", () => {
@@ -46,7 +46,7 @@ describe("Schedule", () => {
             delay: -1,
             timeout: 300,
           })
-      ).toThrowError(PolicyValidationError);
+      ).toThrow(PolicyValidationError);
     });
 
     it("should not create a new schedule instance with an invalid timeout property", () => {
@@ -58,7 +58,7 @@ describe("Schedule", () => {
             delay: 100,
             timeout: -1,
           })
-      ).toThrowError(PolicyValidationError);
+      ).toThrow(PolicyValidationError);
     });
 
     it("should successfully create a new schedule instance with a default policy", () => {

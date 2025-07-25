@@ -60,7 +60,7 @@ describe("Reader", () => {
       const result = reader.map((_) => {
         throw new Error("Error occurred");
       });
-      expect(() => result.run("env")).toThrowError("Error occurred");
+      expect(() => result.run("env")).toThrow("Error occurred");
     });
   });
 

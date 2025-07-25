@@ -42,7 +42,7 @@ describe("Option", () => {
         option.map((_value) => {
           throw new Error("Error in callback");
         });
-      }).toThrowError("Error in callback");
+      }).toThrow("Error in callback");
     });
 
     it("should handle null returned by callback", () => {
