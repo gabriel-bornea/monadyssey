@@ -16,7 +16,7 @@ describe("NonEmptyList", () => {
 
   it("should throw an error when creating from an empty array", () => {
     const func = () => NonEmptyList.fromArray([]);
-    expect(func).toThrowError("Cannot construct a NonEmptyList from a null or empty array.");
+    expect(func).toThrow("Cannot construct a NonEmptyList from a null or empty array.");
   });
 
   it("should correctly return the size of the list", () => {
@@ -38,7 +38,7 @@ describe("NonEmptyList", () => {
     const nel = NonEmptyList.fromArray(array);
 
     const func = () => nel.get(5);
-    expect(func).toThrowError("Index 5 is out of bounds. Must be between 0 and 2");
+    expect(func).toThrow("Index 5 is out of bounds. Must be between 0 and 2");
   });
 
   it("should correctly transform to a string", () => {
