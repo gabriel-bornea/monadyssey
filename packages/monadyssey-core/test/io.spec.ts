@@ -1059,11 +1059,9 @@ describe("IO", () => {
       });
 
       const raceIO = IO.race(task);
-
       expect(executed).toBe(false);
 
       await raceIO.runAsync();
-
       expect(executed).toBe(true);
     });
 
