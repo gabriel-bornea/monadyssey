@@ -24,7 +24,7 @@ jobs:
       - name: Clean Node Modules
         run: rm -rf node_modules
       - name: Install Dependencies
-        run: npm install
+        run: npm ci
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Install Rollup Native Dependency
