@@ -893,4 +893,192 @@ describe("IO", () => {
       expect((result as Ok<number>).value).toBe(167);
     });
   });
+
+  describe("race", () => {
+    it("should return the result of the first IO to complete", async () => {
+      const task1 = IO.of(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return "first";
+      });
+
+      const task2 = IO.of(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        return "second";
+      });
+
+      const task3 = IO.of(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return "third";
+      });
+
+      const result = await IO.race(task1, task2, task3).runAsync();
+
+      expect(result).toEqual({ type: "Ok", value: "first" });
+    });
+
+    it("should return all errors if all IOs fail", async () => {
+      const task1 = IO.failed<string, number>("error1");
+      const task2 = IO.failed<string, number>("error2");
+      const task3 = IO.failed<string, number>("error3");
+
+      const result = await IO.race(task1, task2, task3).runAsync();
+
+      expect(result.type).toBe("Err");
+      if (result.type === "Err") {
+        expect(result.error.size).toBe(3);
+        expect(result.error.all).toEqual(["error1", "error2", "error3"]);
+      }
+    });
+
+    it("should return the first successful result even if some fail", async () => {
+      const task1 = IO.failed<string, string>("error1");
+      const task2 = IO.of(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return "success";
+      });
+      const task3 = IO.failed<string, string>("error2");
+
+      const result = await IO.race(task1, task2, task3).runAsync();
+
+      expect(result).toEqual({ type: "Ok", value: "success" });
+    });
+
+    it("should handle empty array of IOs", async () => {
+      const result = await IO.race().runAsync();
+
+      expect(result.type).toBe("Err");
+    });
+
+    it("should ignore late failures after success", async () => {
+      const ok: IO<string, string> = IO.ofSync(() => "fast success");
+
+      const fail: IO<string, never> = IO.of(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        throw new Error("late error");
+      });
+
+      const result = await IO.race(ok, fail).runAsync();
+
+      expect(result).toEqual({ type: "Ok", value: "fast success" });
+    });
+
+    it("should handle single IO that succeeds", async () => {
+      const task = IO.ofSync(() => "only one");
+
+      const result = await IO.race(task).runAsync();
+
+      expect(result).toEqual({ type: "Ok", value: "only one" });
+    });
+
+    it("should handle single IO that fails", async () => {
+      const task = IO.failed<string, number>("single error");
+
+      const result = await IO.race(task).runAsync();
+
+      expect(result.type).toBe("Err");
+      if (result.type === "Err") {
+        expect(result.error.size).toBe(1);
+        expect(result.error.head).toBe("single error");
+      }
+    });
+
+    it("should return immediately when first IO completes successfully", async () => {
+      const startTime = Date.now();
+
+      const fast = IO.of(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return "fast";
+      });
+
+      const slow = IO.of(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        return "slow";
+      });
+
+      const result = await IO.race(fast, slow).runAsync();
+      const elapsed = Date.now() - startTime;
+
+      expect(result).toEqual({ type: "Ok", value: "fast" });
+      expect(elapsed).toBeLessThan(100);
+    });
+
+    it("should handle IOs with thrown exceptions", async () => {
+      const task1 = IO.of<Error, string>(async () => {
+        throw new Error("thrown error");
+      });
+
+      const task2 = IO.ofSync(() => "success");
+
+      const result = await IO.race(task1, task2).runAsync();
+
+      expect(result).toEqual({ type: "Ok", value: "success" });
+    });
+
+    it("should compose with other IO operations", async () => {
+      const task1 = IO.of(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return 10;
+      });
+
+      const task2 = IO.of(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return 20;
+      });
+
+      const result = await IO.race(task1, task2)
+        .map((n) => n * 2)
+        .runAsync();
+
+      expect(result).toEqual({ type: "Ok", value: 20 });
+    });
+
+    it("should handle race with flatMap", async () => {
+      const task1 = IO.of(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return "first";
+      });
+
+      const task2 = IO.of(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return "second";
+      });
+
+      const result = await IO.race(task1, task2)
+        .flatMap((value) => IO.ofSync(() => value.toUpperCase()))
+        .runAsync();
+
+      expect(result).toEqual({ type: "Ok", value: "FIRST" });
+    });
+
+    it("should be lazy and not execute until runAsync is called", async () => {
+      let executed = false;
+
+      const task = IO.of(async () => {
+        executed = true;
+        return "value";
+      });
+
+      const raceIO = IO.race(task);
+
+      expect(executed).toBe(false);
+
+      await raceIO.runAsync();
+
+      expect(executed).toBe(true);
+    });
+
+    it("should handle race with mapError", async () => {
+      const task1 = IO.failed<string, number>("error1");
+      const task2 = IO.failed<string, number>("error2");
+
+      const result = await IO.race(task1, task2)
+        .mapError((errors) => errors.map((e) => `Mapped: ${e}`))
+        .runAsync();
+
+      expect(result.type).toBe("Err");
+      if (result.type === "Err") {
+        expect(result.error.all).toEqual(["Mapped: error1", "Mapped: error2"]);
+      }
+    });
+  });
 });

@@ -749,6 +749,93 @@ export class IO<E, A> {
   }
 
   /**
+   * Races multiple `IO` operations against each other, returning the result of the first one to complete successfully.
+   * If all operations fail, returns an `Err` containing a non-empty list of all errors encountered.
+   *
+   * This method is useful for implementing timeout patterns, fallback strategies, or optimistic concurrent operations
+   * where you want the fastest successful result. All IO operations are started in parallel, and the first successful
+   * completion wins the race.
+   *
+   * Note: Unlike `parZip`, `race` does not wait for all operations to complete. As soon as one succeeds, that result
+   * is returned. If all operations fail, all errors are collected and returned.
+   *
+   * @template E The type of errors that the IO operations may produce.
+   * @template A The type of the successful result.
+   * @param {...IO<E, A>[]} ops A variable number of IO operations to race against each other.
+   * @returns {IO<NonEmptyList<E>, A>} An IO instance that resolves to the first successful result,
+   *          or an error containing all failures if no operation succeeds.
+   *
+   * @example
+   * // Race between primary and backup data sources
+   * const primary = IO.of(async () => fetchFromPrimary());
+   * const backup = IO.of(async () => fetchFromBackup());
+   *
+   * const result = await IO.race(primary, backup).runAsync();
+   * // Returns whichever completes successfully first
+   *
+   * @example
+   * // Implement a timeout pattern
+   * const operation = IO.of(async () => slowOperation());
+   * const timeout = IO.of(async () => {
+   *   await new Promise(resolve => setTimeout(resolve, 5000));
+   *   throw new Error("Timeout after 5 seconds");
+   * });
+   *
+   * const result = await IO.race(operation, timeout).runAsync();
+   */
+  static race<E, A>(...ops: IO<E, A>[]): IO<NonEmptyList<E>, A> {
+    if (ops.length === 0) {
+      return IO.failed(NonEmptyList.fromArray([{} as E]));
+    }
+
+    return new IO(async () => {
+      const promises = ops.map((io) => {
+        if (!io._effect) {
+          io._compose();
+        }
+        return io._effect!(undefined);
+      });
+
+      return new Promise<Err<NonEmptyList<E>> | Ok<A>>((resolve) => {
+        let completed = 0;
+        let settled = false;
+        const errors: E[] = [];
+
+        promises.forEach((promise, index) => {
+          promise
+            .then((result) => {
+              if (settled) return;
+
+              if (IO.isOk(result)) {
+                settled = true;
+                resolve(result);
+              } else {
+                errors[index] = result.error;
+                completed++;
+
+                if (completed === promises.length) {
+                  settled = true;
+                  resolve(IO.err(NonEmptyList.fromArray(errors)));
+                }
+              }
+            })
+            .catch((error) => {
+              if (settled) return;
+
+              errors[index] = error as E;
+              completed++;
+
+              if (completed === promises.length) {
+                settled = true;
+                resolve(IO.err(NonEmptyList.fromArray(errors)));
+              }
+            });
+        });
+      });
+    });
+  }
+
+  /**
    * Provides a mechanism for recovering from errors in this `IO` operation by applying a provided
    * function that transforms an error of type `E` into a new `IO` operation. This new operation can
    * either correct the error and return a result of type `A` (or a subtype `B` of `A`), or it can
