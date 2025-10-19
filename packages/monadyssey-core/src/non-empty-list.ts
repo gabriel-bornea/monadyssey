@@ -1,4 +1,5 @@
 import { Ordering } from "./ordering";
+import { None, Option, Some } from "./option";
 
 export type Nel<A> = NonEmptyList<A>;
 
@@ -181,6 +182,130 @@ export class NonEmptyList<A> {
    */
   public foldRight<B>(start: B, f: (value: A, accumulator: B) => B): B {
     return this.all.reduceRight((prev, curr) => f(curr, prev), start);
+  }
+
+  /**
+   * Returns the last element of the NonEmptyList.
+   *
+   * This accessor is O(1) and never throws because the structure is guaranteed to be non-empty.
+   * If the tail has elements, it returns the last one; otherwise, it returns the head.
+   *
+   * @remarks
+   * Useful for peeking at the right-most value without converting to an array.
+   *
+   * @returns {A} The last element of the list.
+   *
+   * @example
+   * const nel = NonEmptyList.fromArray([1, 2, 3]);
+   * nel.last; // 3
+   *
+   * const single = NonEmptyList.fromArray([42]);
+   * single.last; // 42
+   */
+  public get last(): A {
+    return this.tail.length > 0 ? this.tail[this.tail.length - 1] : this.head;
+  }
+
+  /**
+   * Appends an element to the end of the NonEmptyList, returning a new NonEmptyList.
+   *
+   * @remarks
+   * - This is an immutable operation; the original list is not modified.
+   * - Runs in O(n) due to array spreading of the tail.
+   *
+   * @param {A} element The element to append to the end of the list.
+   * @returns {NonEmptyList<A>} A new list with the same head and the element appended at the end.
+   *
+   * @example
+   * const nel = NonEmptyList.fromArray([1, 2]);
+   * const extended = nel.append(3);
+   * extended.all; // [1, 2, 3]
+   */
+  public append(element: A): NonEmptyList<A> {
+    return new NonEmptyList(this.head, [...this.tail, element]);
+  }
+
+  /**
+   * Prepends an element to the beginning of the NonEmptyList, returning a new NonEmptyList.
+   *
+   * @remarks
+   * - This is an immutable operation; the original list is not modified.
+   * - Runs in O(n) due to array spreading to construct the new tail.
+   *
+   * @param {A} element The element to place at the front of the list.
+   * @returns {NonEmptyList<A>} A new list whose head is the provided element and whose tail starts with the previous head.
+   *
+   * @example
+   * const nel = NonEmptyList.fromArray([2, 3]);
+   * const extended = nel.prepend(1);
+   * extended.all; // [1, 2, 3]
+   */
+  public prepend(element: A): NonEmptyList<A> {
+    return new NonEmptyList(element, [this.head, ...this.tail]);
+  }
+
+  /**
+   * Concatenates this NonEmptyList with another NonEmptyList, returning a new NonEmptyList.
+   *
+   * @remarks
+   * - This operation preserves order: all elements from the receiver come first, followed by all elements of `other`.
+   * - Immutable; neither the receiver nor `other` are modified.
+   * - Runs in O(n + m) where n and m are the sizes of the two lists.
+   *
+   * @param {NonEmptyList<A>} other The other list to append to the end of this list.
+   * @returns {NonEmptyList<A>} A new list containing all elements of this list followed by all elements of `other`.
+   *
+   * @example
+   * const a = NonEmptyList.fromArray([1, 2]);
+   * const b = NonEmptyList.fromArray([3, 4]);
+   * const both = a.concat(b);
+   * both.all; // [1, 2, 3, 4]
+   */
+  public concat(other: NonEmptyList<A>): NonEmptyList<A> {
+    return new NonEmptyList(this.head, [...this.tail, ...other.all]);
+  }
+
+  /**
+   * Reverses the order of elements in the NonEmptyList, returning a new NonEmptyList.
+   *
+   * @remarks
+   * - The resulting list is also non-empty and maintains all elements in reverse order.
+   * - Immutable; the original list is not modified.
+   * - Runs in O(n).
+   *
+   * @returns {NonEmptyList<A>} A new list whose elements are the reverse of this list.
+   *
+   * @example
+   * const nel = NonEmptyList.fromArray([1, 2, 3]);
+   * const reversed = nel.reverse();
+   * reversed.all; // [3, 2, 1]
+   */
+  public reverse(): NonEmptyList<A> {
+    const reversed = [...this.all].reverse();
+    return new NonEmptyList(reversed[0], reversed.slice(1));
+  }
+
+  /**
+   * Finds the first element that satisfies the given predicate.
+   *
+   * @remarks
+   * - Searches from head to tail and returns immediately on the first match.
+   * - Runs in O(n).
+   *
+   * @param {(value: A) => boolean} predicate A function that tests each element for a condition.
+   * @returns {Option<A>} Some(value) if a matching element is found; None otherwise.
+   *
+   * @example
+   * const nel = NonEmptyList.fromArray([1, 3, 4]);
+   * nel.find(x => x % 2 === 0).map(String).getOrNull(); // "4"
+   * nel.find(x => x > 10).getOrNull(); // null
+   */
+  public find(predicate: (value: A) => boolean): Option<A> {
+    if (this.head && predicate(this.head)) {
+      return Some.of(this.head);
+    }
+    const found = this.tail.find(predicate);
+    return found ? Some.of(found) : None.Instance;
   }
 
   /**
