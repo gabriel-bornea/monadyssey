@@ -950,14 +950,14 @@ describe("IO", () => {
     });
 
     it("should ignore late failures after success", async () => {
-      const ok: IO<string, string> = IO.ofSync(() => "fast success");
+      const ok = IO.ofSync<string, string>(() => "fast success");
 
-      const fail: IO<string, never> = IO.of(async () => {
+      const fail = IO.of<string, string>(async () => {
         await new Promise((resolve) => setTimeout(resolve, 100));
         throw new Error("late error");
       });
 
-      const result = await IO.race(ok, fail).runAsync();
+      const result = await IO.race<string, string>(ok, fail).runAsync();
 
       expect(result).toEqual({ type: "Ok", value: "fast success" });
     });
