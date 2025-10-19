@@ -1,4 +1,4 @@
-import { NonEmptyList } from "../src";
+import { NonEmptyList, Option } from "../src";
 import { describe, expect, it } from "@jest/globals";
 import { Ordering } from "../src";
 
@@ -346,6 +346,117 @@ describe("NonEmptyList", () => {
       const alwaysEqualComparator = (_a: number, _b: number) => Ordering.Equal;
       const sortedNel = nel.sort(alwaysEqualComparator);
       expect(sortedNel.all).toEqual([3, 1, 4, 1, 5]);
+    });
+  });
+
+  describe("last", () => {
+    it("returns the last element when tail exists", () => {
+      const nel = NonEmptyList.fromArray([1, 2, 3]);
+      expect(nel.last).toBe(3);
+    });
+
+    it("returns the head when there is only one element", () => {
+      const nel = NonEmptyList.fromArray([42]);
+      expect(nel.last).toBe(42);
+    });
+  });
+
+  describe("append", () => {
+    it("appends element to the end and returns a new list", () => {
+      const nel = NonEmptyList.fromArray([1, 2]);
+      const appended = nel.append(3);
+
+      expect(appended.all).toEqual([1, 2, 3]);
+      expect(nel.all).toEqual([1, 2]); // immutability
+    });
+
+    it("works with a single-element list", () => {
+      const nel = NonEmptyList.fromArray([1]);
+      const appended = nel.append(2);
+
+      expect(appended.all).toEqual([1, 2]);
+    });
+  });
+
+  describe("prepend", () => {
+    it("prepends element to the beginning and returns a new list", () => {
+      const nel = NonEmptyList.fromArray([2, 3]);
+      const prepended = nel.prepend(1);
+
+      expect(prepended.all).toEqual([1, 2, 3]);
+      expect(nel.all).toEqual([2, 3]); // immutability
+    });
+
+    it("works with a single-element list", () => {
+      const nel = NonEmptyList.fromArray([2]);
+      const prepended = nel.prepend(1);
+
+      expect(prepended.all).toEqual([1, 2]);
+    });
+  });
+
+  describe("concat", () => {
+    it("concatenates two non-empty lists preserving order", () => {
+      const a = NonEmptyList.fromArray([1, 2]);
+      const b = NonEmptyList.fromArray([3, 4]);
+      const both = a.concat(b);
+
+      expect(both.all).toEqual([1, 2, 3, 4]);
+      expect(a.all).toEqual([1, 2]); // immutability
+      expect(b.all).toEqual([3, 4]); // immutability
+    });
+
+    it("handles concatenation when either side has a single element", () => {
+      const a = NonEmptyList.fromArray([1]);
+      const b = NonEmptyList.fromArray([2, 3]);
+      const c = a.concat(b);
+      const d = b.concat(a);
+
+      expect(c.all).toEqual([1, 2, 3]);
+      expect(d.all).toEqual([2, 3, 1]);
+    });
+  });
+
+  describe("reverse", () => {
+    it("reverses a list with multiple elements", () => {
+      const nel = NonEmptyList.fromArray([1, 2, 3]);
+      const reversed = nel.reverse();
+
+      expect(reversed.all).toEqual([3, 2, 1]);
+      expect(nel.all).toEqual([1, 2, 3]); // immutability
+    });
+
+    it("keeps a single-element list unchanged", () => {
+      const nel = NonEmptyList.fromArray([1]);
+      const reversed = nel.reverse();
+
+      expect(reversed.all).toEqual([1]);
+    });
+  });
+
+  describe("find", () => {
+    it("returns Some(head) when head matches", () => {
+      const nel = NonEmptyList.fromArray([2, 3, 4]);
+      const result = nel.find((x) => x % 2 === 0);
+
+      expect(result.type).toBe("Some");
+      expect((result as any).value).toBe(2);
+    });
+
+    it("returns Some(firstMatchInTail) when match is in tail", () => {
+      const nel = NonEmptyList.fromArray([1, 3, 4, 6]);
+      const result = nel.find((x) => x % 2 === 0);
+
+      expect(result.type).toBe("Some");
+      expect((result as any).value).toBe(4);
+    });
+
+    it("returns None when no element matches", () => {
+      const nel = NonEmptyList.fromArray([1, 3, 5]);
+      const result: Option<number> = nel.find((x) => x % 2 === 0);
+
+      expect(result.type).toBe("None");
+      expect(result.getOrNull()).toBeNull();
     });
   });
 });
