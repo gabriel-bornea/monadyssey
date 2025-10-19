@@ -363,13 +363,15 @@ export class IO<E, A> {
    */
   mapError = <F>(f: (e: E) => F): IO<F, A> => {
     const effect = new IO<F, A>();
-    effect._operations = this._operations.map((op) => async (prev: Err<E> | Ok<A>): Promise<Err<F> | Ok<A>> => {
-      const result = await op(prev);
-      if (IO.isErr(result)) {
-        return IO.err(f(result.error));
-      }
-      return result;
-    });
+    effect._operations = [
+      ...this._operations,
+      async (prev: Err<E> | Ok<A>): Promise<Err<F> | Ok<A>> => {
+        if (IO.isErr(prev)) {
+          return IO.err(f(prev.error));
+        }
+        return prev;
+      },
+    ];
     return effect;
   };
 
@@ -778,22 +780,23 @@ export class IO<E, A> {
    */
   recover = <B extends A>(f: (error: E) => IO<E, B>): IO<E, A> => {
     const effect = new IO<E, A>();
-    effect._operations = this._operations.map((op) => async (prev: Err<E> | Ok<A>): Promise<Err<E> | Ok<A>> => {
-      const result = await op(prev);
-      if (IO.isOk(result)) {
-        return result;
-      } else {
-        const rec = f(result.error);
-        let res: Err<E> | Ok<B> = result;
-        for (const operation of rec._operations) {
-          res = await operation(res);
-          if (IO.isErr(res)) {
-            break;
+    effect._operations = [
+      ...this._operations,
+      async (prev: Err<E> | Ok<A>): Promise<Err<E> | Ok<A>> => {
+        if (IO.isErr(prev)) {
+          const rec = f(prev.error);
+          let res: Err<E> | Ok<B> = prev;
+          for (const operation of rec._operations) {
+            res = await operation(res);
+            if (IO.isErr(res)) {
+              break;
+            }
           }
+          return res as Err<E> | Ok<A>;
         }
-        return res as Err<E> | Ok<A>;
-      }
-    });
+        return prev;
+      },
+    ];
     return effect;
   };
 
