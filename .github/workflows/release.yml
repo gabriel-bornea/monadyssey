@@ -39,3 +39,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Open PR to main
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(release): sync version bumps from release"
+          title: "chore(release): sync version bumps"
+          body: |
+            Auto PR created after cutting a release from **release**.
+            Includes: version bumps, CHANGELOG, and any generated artifacts.
+          branch: release
+          base: main
+          labels: release
+          assignees: gabriel-bornea
+          draft: false
