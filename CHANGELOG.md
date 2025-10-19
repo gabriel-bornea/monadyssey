@@ -1,3 +1,10 @@
+# [1.14.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.13.1...v1.14.0) (2025-10-19)
+
+
+### Features
+
+* Release process change ([1ee7729](https://github.com/gabriel-bornea/monadyssey/commit/1ee7729254f7f3dbb057352910cb0a58b36039b2))
+
 ## [1.12.2](https://github.com/gabriel-bornea/monadyssey/compare/v1.12.1...v1.12.2) (2025-02-04)
 
 
