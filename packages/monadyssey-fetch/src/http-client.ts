@@ -34,7 +34,7 @@ export interface HttpInterceptor {
  * By returning an `IO`, it enables functional composition, deferred execution, and safer error handling.
  * This approach allows chaining and combining operations while managing errors effectively.
  */
-export const HttpClient = {
+export class HttpClient {
   /**
    * Performs a GET request to the specified URI.
    *
@@ -43,8 +43,11 @@ export const HttpClient = {
    * @param {Omit<Options<A>, "body">} [options] - Configuration options for the request, excluding the `body`.
    * @returns {IO<HttpError, Response | A>} - An `IO` representing the result of the request, either a `Response` or the transformed body.
    */
-  get: <A = any>(uri: string, options?: Omit<Options<A>, "body">): IO<HttpError, Response | A> =>
-    request<A>(uri, "GET", options),
+  static get(uri: string, options: Omit<Options, "body"> & { observe: "response" }): IO<HttpError, Response>;
+  static get<A = any>(uri: string, options?: Omit<Options<A>, "body">): IO<HttpError, A>;
+  static get<A = any>(uri: string, options?: Omit<Options<A>, "body">): IO<HttpError, Response | A> {
+    return request<A>(uri, "GET", options);
+  }
 
   /**
    * Performs a POST request to the specified URI with an optional body.
@@ -55,8 +58,11 @@ export const HttpClient = {
    * @param {Options<A>} [options] - Configuration options for the request.
    * @returns {IO<HttpError, Response | A>} - An `IO` representing the result of the request, either a `Response` or the transformed body.
    */
-  post: <A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, Response | A> =>
-    request<A>(uri, "POST", { ...options, body }),
+  static post(uri: string, body: any, options: Options & { observe: "response" }): IO<HttpError, Response>;
+  static post<A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, A>;
+  static post<A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, Response | A> {
+    return request<A>(uri, "POST", { ...options, body });
+  }
 
   /**
    * Performs a PUT request to the specified URI with an optional body.
@@ -67,8 +73,11 @@ export const HttpClient = {
    * @param {Options<A>} [options] - Configuration options for the request.
    * @returns {IO<HttpError, Response | A>} - An `IO` representing the result of the request, either a `Response` or the transformed body.
    */
-  put: <A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, Response | A> =>
-    request<A>(uri, "PUT", { ...options, body }),
+  static put(uri: string, body: any, options: Options & { observe: "response" }): IO<HttpError, Response>;
+  static put<A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, A>;
+  static put<A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, Response | A> {
+    return request<A>(uri, "PUT", { ...options, body });
+  }
 
   /**
    * Performs a PATCH request to the specified URI with an optional body.
@@ -79,8 +88,11 @@ export const HttpClient = {
    * @param {Options<A>} [options] - Configuration options for the request.
    * @returns {IO<HttpError, Response | A>} - An `IO` representing the result of the request, either a `Response` or the transformed body.
    */
-  patch: <A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, Response | A> =>
-    request<A>(uri, "PATCH", { ...options, body }),
+  static patch(uri: string, body: any, options: Options & { observe: "response" }): IO<HttpError, Response>;
+  static patch<A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, A>;
+  static patch<A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, Response | A> {
+    return request<A>(uri, "PATCH", { ...options, body });
+  }
 
   /**
    * Performs a DELETE request to the specified URI.
@@ -90,8 +102,11 @@ export const HttpClient = {
    * @param {Omit<Options<A>, "body">} [options] - Configuration options for the request, excluding the `body`.
    * @returns {IO<HttpError, Response | A>} - An `IO` representing the result of the request, either a `Response` or the transformed body.
    */
-  delete: <A = any>(uri: string, options?: Omit<Options<A>, "body">): IO<HttpError, Response | A> =>
-    request<A>(uri, "DELETE", options),
+  static delete(uri: string, options: Omit<Options, "body"> & { observe: "response" }): IO<HttpError, Response>;
+  static delete<A = any>(uri: string, options?: Omit<Options<A>, "body">): IO<HttpError, A>;
+  static delete<A = any>(uri: string, options?: Omit<Options<A>, "body">): IO<HttpError, Response | A> {
+    return request<A>(uri, "DELETE", options);
+  }
 
   /**
    * Performs a custom HTTP request with the specified method.
@@ -103,8 +118,11 @@ export const HttpClient = {
    * @param {"body" | "response"} [options.observe="body"] - Determines if the result should be the parsed body or the full `Response` object.
    * @returns {IO<HttpError, Response | A>} - An `IO` representing the result of the request, either a `Response` or the transformed body.
    */
-  fetch: <A = any>(uri: string, method: Method, options: Options<A> = {}): IO<HttpError, Response | A> =>
-    request<A>(uri, method, options),
+  static fetch(uri: string, method: Method, options: Options & { observe: "response" }): IO<HttpError, Response>;
+  static fetch<A = any>(uri: string, method: Method, options?: Options<A>): IO<HttpError, A>;
+  static fetch<A = any>(uri: string, method: Method, options: Options<A> = {}): IO<HttpError, Response | A> {
+    return request<A>(uri, method, options);
+  }
 
   /**
    * Registers a new `HttpInterceptor` into the interceptor pipeline.
@@ -114,11 +132,11 @@ export const HttpClient = {
    *
    * @param interceptor - The `HttpInterceptor` instance to be registered.
    */
-  addInterceptor: (interceptor: HttpInterceptor): void => {
+  static addInterceptor(interceptor: HttpInterceptor): void {
     if (!interceptors.includes(interceptor)) {
       interceptors.push(interceptor);
     }
-  },
+  }
 
   /**
    * Removes a specific `HttpInterceptor` from the interceptor pipeline.
@@ -134,13 +152,13 @@ export const HttpClient = {
    * // Later, if the interceptor is no longer needed:
    * HttpClient.removeInterceptor(interceptor);
    */
-  removeInterceptor: (interceptor: HttpInterceptor): void => {
+  static removeInterceptor(interceptor: HttpInterceptor): void {
     const index = interceptors.indexOf(interceptor);
     if (index >= 0) {
       interceptors.splice(index, 1);
     }
-  },
-};
+  }
+}
 
 /**
  * Represents an HTTP error encountered during a request.
