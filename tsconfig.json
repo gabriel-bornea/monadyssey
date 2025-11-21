@@ -20,5 +20,9 @@
     "experimentalDecorators": true,
     "outDir": "dist"
   },
-  "include": ["packages/monadyssey-core/src/**/*.ts", "packages/monadyssey-fetch/src/**/*.ts", "packages/monadyssey-core/src/**/*.tsx", "packages/monadyssey-fetch/src/**/*.tsx"]
+  "include": [],
+  "references": [
+    { "path": "./packages/monadyssey-core" },
+    { "path": "./packages/monadyssey-fetch" }
+  ]
 }
