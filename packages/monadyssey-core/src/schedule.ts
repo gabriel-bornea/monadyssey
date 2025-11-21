@@ -24,6 +24,13 @@ export interface Policy {
    * If not set, attempts will not time out.
    */
   readonly timeout?: number;
+
+  /**
+   * Optional. A randomization factor between 0 and 1.
+   * If set, adds random jitter to the delay to prevent thundering herd problems.
+   * For example, a factor of 0.1 adds up to +/- 10% variation to the delay.
+   */
+  readonly jitter?: number;
 }
 
 /**
@@ -32,16 +39,18 @@ export interface Policy {
  * @param {number} recurs - The maximum number of retries.
  * @param {number} factor - The factor by which the delay increases after each retry.
  * @param {number} delay - The initial delay before the first retry, in milliseconds.
- * @param {number} [timeout] - The optional timeout for each attempt, in milliseconds. If not set, attempts will not time out.
+ * @param {number} [timeout] - The optional timeout for each attempt, in milliseconds.
+ * @param {number} [jitter] - The randomization factor (0-1). Defaults to 0.
  * @returns {Policy} The default policy.
  */
 export const defaultPolicy = (
   recurs: number = 3,
   factor: number = 1.2,
   delay: number = 1000,
-  timeout?: number
+  timeout?: number,
+  jitter: number = 0
 ): Policy => {
-  return { recurs, factor, delay, timeout };
+  return { recurs, factor, delay, timeout, jitter };
 };
 
 /**
@@ -70,6 +79,9 @@ export class Schedule {
     }
     if (policy.timeout !== undefined && policy.timeout < 0) {
       throw new PolicyValidationError("Policy validation error: 'timeout' must not be negative");
+    }
+    if (policy.jitter !== undefined && (policy.jitter < 0 || policy.jitter > 1)) {
+      throw new PolicyValidationError("Policy validation error: 'jitter' must be between 0 and 1");
     }
     this.policy = policy;
   }
@@ -119,7 +131,7 @@ export class Schedule {
           return Promise.reject(liftE(new RetryError(`Retry limit reached without success: ${error}`)));
         }
         await new Promise((resolve) => {
-          timeoutId = setTimeout(resolve, delay);
+          timeoutId = setTimeout(resolve, this.applyJitter(delay));
           if (this.cancelled) {
             clearTimeout(timeoutId);
             return Promise.reject(liftE(new CancellationError("Operation was cancelled")));
@@ -170,7 +182,7 @@ export class Schedule {
           lastSuccessResult = result.value;
 
           if (attempt < policy.recurs - 1) {
-            await new Promise((resolve) => (timeoutId = setTimeout(resolve, policy.delay)));
+            await new Promise((resolve) => (timeoutId = setTimeout(resolve, this.applyJitter(policy.delay))));
           }
         } else {
           return Promise.reject(liftE(new RepeatError(`Failed to execute repeat: ${result.error}`)));
@@ -257,6 +269,13 @@ export class Schedule {
    */
   cancel(): void {
     this.cancelled = true;
+  }
+
+  private applyJitter(delay: number): number {
+    if (!this.policy.jitter) return delay;
+    const amount = delay * this.policy.jitter;
+    const offset = (Math.random() * 2 - 1) * amount;
+    return Math.max(0, delay + offset);
   }
 }
 

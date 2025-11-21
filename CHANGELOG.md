@@ -1,3 +1,11 @@
+# [1.15.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.14.1...v1.15.0) (2025-11-21)
+
+
+### Features
+
+* add `filter` to `Option` type ([4009194](https://github.com/gabriel-bornea/monadyssey/commit/4009194c32614e6a1772697021b05e43f83d41c4))
+* add `getOrElse`, `getOrNull`, and `swap` methods to `Either` ([0e2b09d](https://github.com/gabriel-bornea/monadyssey/commit/0e2b09da5fc31c3ea4cd525db58fedb372c629bb))
+
 # [1.14.0](https://github.com/gabriel-bornea/monadyssey/compare/v1.13.1...v1.14.0) (2025-10-19)
 
 

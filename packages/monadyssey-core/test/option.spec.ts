@@ -78,6 +78,20 @@ describe("Option", () => {
     });
   });
 
+  describe("filter", () => {
+    it("should filter out values that do not satisfy the predicate", () => {
+      const option = Option.ofNullable(5);
+      const filtered = option.filter((value) => value > 3);
+      expect(filtered).toEqual(Some.of(5));
+    });
+
+    it("should return None for values that do not satisfy the predicate", () => {
+      const option = Option.ofNullable(3);
+      const filtered = option.filter((value) => value > 3);
+      expect(filtered).toEqual(None.Instance);
+    });
+  });
+
   describe("fold", () => {
     it("should execute the ifSome function for a Some instance", () => {
       const option: Option<number> = Some.of(5);

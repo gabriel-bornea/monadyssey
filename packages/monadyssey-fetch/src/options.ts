@@ -60,7 +60,7 @@ export type Options<A = any> = {
   /** The expected type of the response body. Defaults to `"json"`. */
   responseType?: ResponseType;
 
-  /** The credentials policy for the request. Defaults to `"include"`. */
+  /** The credential policy for the request. Defaults to `"include"`. */
   credentials?: Credentials;
 
   /** Specifies how the response should be observed. Defaults to `"body"`. */

@@ -1,9 +1,6 @@
 module.exports = {
   preset: "ts-jest",
   testEnvironment: "node",
-  testEnvironmentOptions: {
-    url: "http://localhost"
-  },
   testMatch: ["**/test/**/*.(spec|test).[jt]s?(x)"],
   transform: {
     "^.+\\.ts$": "ts-jest",
