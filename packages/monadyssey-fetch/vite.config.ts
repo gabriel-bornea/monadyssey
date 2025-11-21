@@ -20,6 +20,7 @@ export default defineConfig({
   },
   plugins: [
     dts({
+      tsconfigPath: "./tsconfig.json",
       staticImport: true,
       rollupTypes: true,
       insertTypesEntry: true,
