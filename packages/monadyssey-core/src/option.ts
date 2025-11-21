@@ -65,6 +65,15 @@ export abstract class Option<A> {
   abstract flatMap<B>(f: (value: A) => Option<B>): Option<B>;
 
   /**
+   * Returns this `Option` if it is a `Some` and the predicate returns `true`, otherwise returns `None`.
+   * @param predicate - The predicate to test the value against.
+   * @example
+   * Option.Some(5).filter(x => x > 0); // Returns Some(5)
+   * Option.Some(-5).filter(x => x > 0); // Returns None
+   */
+  abstract filter(predicate: (value: A) => boolean): Option<A>;
+
+  /**
    * Executes a provided function if this `Option` is a `Some`, typically used for side effects.
    * Returns the original `Option` instance to facilitate method chaining.
    * @example
@@ -140,6 +149,10 @@ export class None extends Option<never> {
     return this;
   }
 
+  filter(_: (value: never) => boolean): Option<never> {
+    return this;
+  }
+
   fold<B>(ifNone: () => B, _: (right: never) => B): B {
     return ifNone();
   }
@@ -186,6 +199,10 @@ export class Some<A> extends Option<NonNullable<A>> {
 
   flatMap<B>(f: (value: NonNullable<A>) => Option<B>): Option<B> {
     return f(this.value);
+  }
+
+  filter(predicate: (value: NonNullable<A>) => boolean): Option<NonNullable<A>> {
+    return predicate(this.value) ? this : None.Instance;
   }
 
   fold<B>(_: () => B, ifSome: (right: NonNullable<A>) => B): B {
