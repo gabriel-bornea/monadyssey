@@ -932,6 +932,53 @@ describe("HttpClient", () => {
     });
   });
 
+  describe("overload behavior", () => {
+    it("should return the body by default", async () => {
+      interface Data {
+        id: number;
+        name: string;
+      }
+
+      const data: Data = { id: 1, name: "John" };
+      (global.fetch as jest.Mock).mockResolvedValue(ok(data));
+
+      const eff = await HttpClient.get<Data>("https://api.example.com/default").runAsync();
+
+      expect(eff.type).toBe("Ok");
+      if (eff.type === "Ok") {
+        expect(eff.value).toEqual(data);
+        expect(eff.value instanceof Response).toBe(false);
+      }
+    });
+
+    it("should return the body when observe is explicitly 'body'", async () => {
+      const data = { id: 2 };
+      (global.fetch as jest.Mock).mockResolvedValue(ok(data));
+
+      const eff = await HttpClient.get("https://api.example.com/body", { observe: "body" }).runAsync();
+
+      expect(eff.type).toBe("Ok");
+      if (eff.type === "Ok") {
+        expect(eff.value).toEqual(data);
+        expect(eff.value instanceof Response).toBe(false);
+      }
+    });
+
+    it("should return the Response object when observe is 'response'", async () => {
+      const data = { id: 3 };
+      (global.fetch as jest.Mock).mockResolvedValue(ok(data));
+
+      const eff = await HttpClient.get("https://api.example.com/response", { observe: "response" }).runAsync();
+
+      expect(eff.type).toBe("Ok");
+      if (eff.type === "Ok") {
+        expect(eff.value instanceof Response).toBe(true);
+        const response = eff.value as Response;
+        expect(await response.json()).toEqual(data);
+      }
+    });
+  });
+
   describe("interceptors", () => {
     beforeEach(() => {
       global.fetch = jest.fn();
