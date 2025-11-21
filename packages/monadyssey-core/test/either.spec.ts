@@ -77,6 +77,36 @@ describe("Either", () => {
     });
   });
 
+  describe("getOrElse", () => {
+    it("should return the value contained by the Right instance", () => {
+      const either = Right.of(5);
+      const result = either.getOrElse(() => 0);
+      expect(result).toBe(5);
+    });
+
+    it("should return the default value if Left instance", () => {
+      const either = Either.catch<number>(() => {
+        throw Error("Boom");
+      });
+      const result = either.getOrElse(() => 0);
+      expect(result).toBe(0);
+    });
+  });
+
+  describe("getOrNull", () => {
+    it("should return the value contained by the Right instance", () => {
+      const either = Right.of(5);
+      const result = either.getOrNull();
+      expect(result).toBe(5);
+    });
+
+    it("should return null if Left instance", () => {
+      const either = Left.of("Error");
+      const result = either.getOrNull();
+      expect(result).toBeNull();
+    });
+  });
+
   describe("fold", () => {
     it("should execute the right function for a Right instance", () => {
       const either: Either<string, number> = Right.of(5);
@@ -94,6 +124,18 @@ describe("Either", () => {
         (value) => `Success with ${value}`
       );
       expect(result).toBe("Error occurred: Error");
+    });
+  });
+
+  describe("swap", () => {
+    it("should swap the right to the left value", () => {
+      const either = Right.of(5).swap();
+      expect(either).toEqual(Left.of(5));
+    });
+
+    it("should swap the left to the right value", () => {
+      const either = Left.of("Error").swap();
+      expect(either).toEqual(Right.of("Error"));
     });
   });
 

@@ -123,6 +123,28 @@ export abstract class Either<A, B> {
   abstract flatMap<C>(f: (right: B) => Either<A, C>): Either<A, C>;
 
   /**
+   * Returns the value from this `Right` or the given argument if this is a `Left`.
+   * @param value - A function that returns the default value.
+   * @returns The value of `Right` or the result of `value`.
+   * @example
+   * Right.of(5).getOrElse(() => 0); // Returns 5
+   * Left.of("error").getOrElse(() => 0); // Returns 0
+   */
+  abstract getOrElse(value: (left: A) => B): B;
+
+  /**
+   * Returns the value from this `Right` or `null` if this is a `Left`.
+   * @returns The value of `Right` or `null`.
+   */
+  abstract getOrNull(): B | null;
+
+  /**
+   * Swaps the `Left` and `Right` types.
+   * @returns A new `Either` with the types swapped.
+   */
+  abstract swap(): Either<B, A>;
+
+  /**
    * Applies one of two provided functions based on the contents of this Either.
    * @param ifLeft - A function to handle a Left value.
    * @param ifRight - A function to handle a Right value.
@@ -179,6 +201,18 @@ export class Left<A> extends Either<A, never> {
     return this;
   }
 
+  getOrElse(defaultValue: (left: A) => never): never {
+    return defaultValue(this.value);
+  }
+
+  getOrNull(): null {
+    return null;
+  }
+
+  swap(): Either<never, A> {
+    return Right.of(this.value);
+  }
+
   fold<C>(ifLeft: (left: A) => C, _: (right: never) => C): C {
     return ifLeft(this.value);
   }
@@ -216,6 +250,18 @@ export class Right<B> extends Either<never, B> {
 
   flatMap<A, C>(f: (right: B) => Either<A, C>): Either<A, C> {
     return f(this.value);
+  }
+
+  getOrElse(_: (left: never) => B): B {
+    return this.value;
+  }
+
+  getOrNull(): B {
+    return this.value;
+  }
+
+  swap(): Either<B, never> {
+    return Left.of(this.value);
   }
 
   fold<C>(_: (left: never) => C, ifRight: (right: B) => C): C {
