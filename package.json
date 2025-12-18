@@ -25,7 +25,7 @@
     "build:packages": "npm run build --workspaces",
     "build:parallel": "concurrently \"npm run build --workspace=packages/monadyssey-core\" \"npm run build --workspace=packages/monadyssey-fetch\"",
     "format": "npm run lint:fix && npm run prettier:fix",
-    "test": "cross-env NODE_OPTIONS=--no-experimental-webstorage jest --env=node --verbose --coverage",
+    "test": "jest --env=node --verbose --coverage --detectOpenHandles --forceExit",
     "lint": "eslint \"packages/**/*.{ts,tsx}\"",
     "lint:fix": "eslint \"packages/**/*.{ts,tsx}\" --fix",
     "prettier": "prettier \"packages/**/*.{ts,tsx}\" --check",
