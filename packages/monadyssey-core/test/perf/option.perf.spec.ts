@@ -6,24 +6,24 @@ describe("Option simulation", () => {
     html("Option");
   });
 
-  it("Some.of", () => {
-    perf("Some.of", () => Some.of(42));
+  it("Some.pure", () => {
+    perf("Some.pure", () => Some.pure(42));
   });
 
   it("Some.map", () => {
-    perf("map", () => Some.of(41).map((num) => num + 1));
+    perf("map", () => Some.pure(41).map((num) => num + 1));
   });
 
   it("Some.flatMap with Some", () => {
-    perf("flatMap with Some", () => Some.of(50).flatMap((n) => Some.of(n + 50)));
+    perf("flatMap with Some", () => Some.pure(50).flatMap((n) => Some.pure(n + 50)));
   });
 
   it("Some.flatMap with None", () => {
-    perf("flatMap with None", () => Some.of(50).flatMap((_) => None.Instance));
+    perf("flatMap with None", () => Some.pure(50).flatMap((_) => None.Instance));
   });
 
   it("Some.tap", () => {
-    perf("tap", () => Some.of(41).tap((num) => num + 1));
+    perf("tap", () => Some.pure(41).tap((num) => num + 1));
   });
 
   it("None.of", () => {
@@ -35,7 +35,7 @@ describe("Option simulation", () => {
   });
 
   it("None.flatMap with Some", () => {
-    perf("flatMap with Some", () => None.Instance.flatMap((n) => Some.of(n + 50)));
+    perf("flatMap with Some", () => None.Instance.flatMap((n) => Some.pure(n + 50)));
   });
 
   it("None.flatMap with None", () => {

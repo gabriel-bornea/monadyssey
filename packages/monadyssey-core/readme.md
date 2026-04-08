@@ -5,15 +5,22 @@
 
 ### Overview
 
-**monadyssey** is the foundational module, its purpose is to addresses challenges such as retrying operations, managing 
-structured error handling, and building declarative, reusable workflows. By leveraging type safety and functional 
-paradigms, it encourages predictable and maintainable code.
+**monadyssey** is the foundational module. It addresses challenges such as retrying operations, managing structured error 
+handling, and building declarative, reusable workflows. By leveraging type safety and functional paradigms, it encourages 
+predictable and maintainable code.
 
 ### Documentation
 
 Explore the documentation for specific features:
 
-- [IO](../../docs/monadyssey-core/io.md): Manage side effects, handle errors consistently, and compose asynchronous operations using the `IO` data type.
+- [IO](../../docs/monadyssey-core/io.md): Side effects, error handling, composition, parallelism, cancellation, resource safety, and timeout.
+- [Schedule](../../docs/monadyssey-core/schedule.md): Retry, repeat, and timeout policies with configurable backoff, jitter, and cancellation.
+- [Either](../../docs/monadyssey-core/either.md): A value that is either `Left<A>` or `Right<B>`, for synchronous success/failure modeling.
+- [Option](../../docs/monadyssey-core/option.md): A value that may or may not exist — type-safe alternative to `null`.
+- [Eval](../../docs/monadyssey-core/eval.md): Deferred, lazy, and memoized computations with stack-safe evaluation.
+- [Reader](../../docs/monadyssey-core/reader.md): Environment-based dependency injection.
+- [NonEmptyList](../../docs/monadyssey-core/non-empty-list.md): A list guaranteed to have at least one element.
+- [Ordering](../../docs/monadyssey-core/ordering.md): Comparison result type with lexicographic composition.
 
 ### Installation
 
@@ -25,39 +32,49 @@ npm install monadyssey
 
 ### Features
 
-#### Declarative Asynchronous Control
+#### Side Effects and Error Handling
 
-Monadyssey offers tools like `Schedule` and configurable retry policies to manage retries, delays, and timeouts. These 
-utilities allow developers to define how operations behave in the face of failures or recurring tasks without 
-unnecessary complexity.
+The `IO` type encapsulates asynchronous computations while explicitly modeling success and failure states. Errors are 
+handled predictably through typed error channels, with recovery and transformation built into the API.
 
-#### Explicit Error Handling
+#### Resource Safety
 
-The `IO` type encapsulates asynchronous computations while explicitly modeling success and failure states. This 
-ensures errors are handled predictably, enabling recovery and transformation in a controlled manner.
+`IO.bracket` guarantees resource cleanup (acquire/use/release) regardless of whether the computation succeeds, fails, 
+or is cancelled. Combined with `timeout`, it provides first-class support for bounded execution with automatic cleanup.
+
+#### Cancellation
+
+IO computations can be forked into fibers and cancelled cooperatively via `AbortSignal`. Cancellation propagates through 
+`flatMap` chains, parallel combinators, timeouts, and bracket release phases.
+
+#### Scheduling
+
+`Schedule` provides configurable retry and repeat policies with exponential backoff, jitter, per-attempt timeouts, and 
+cooperative cancellation. Policies compose with IO through `retryWithSchedule` and `repeatWithSchedule`.
+
+#### Parallel Composition
+
+`parMapN`, `parTraverse`, `parSequence`, and `race` run IO computations concurrently, collecting errors into 
+`NonEmptyList` on failure. All combinators respect cancellation.
 
 #### Functional Data Structures
 
 The library provides data structures that align with functional programming principles:
 
-* `NonEmptyList`: A collection guaranteed to contain at least one element, ensuring safe and predictable operations.
-* `Either`: A type representing computations that may produce a result (`Right`) or an error (`Left`).
-* `Option`: An abstraction for optional values, offering a safer alternative to `null` or `undefined`.
-
-#### Composability
-
-The library emphasizes the composability of workflows, enabling developers to combine, sequence, or parallelize 
-operations. This approach promotes the creation of complex behaviors from smaller, reusable components.
+* `Either`: A value that is either `Right` (success) or `Left` (failure), with `map`, `flatMap`, `fold`, and `swap`.
+* `Option`: An abstraction for optional values — `Some` or `None` — offering a safer alternative to `null` or `undefined`.
+* `NonEmptyList`: A collection guaranteed to contain at least one element, with safe `reduce`, `exists`, `forall`, and all standard list operations.
+* `Ordering`: A comparison result (`LT`, `EQ`, `GT`) with lexicographic composition via `concat` and `compareBy`.
 
 #### Lazy and Deferred Computations
 
-The `Eval` type enables deferred or lazy evaluation of computations, optimizing performance and providing 
-fine-grained control over execution.
+`Eval` enables deferred (`Eval.defer`), lazy and memoized (`Eval.lazy`), or immediate (`Eval.now`) evaluation. 
+Computations compose with `map` and `flatMap` and are only evaluated when `evaluate()` is called.
 
 #### Environment-Based Dependencies
 
-The `Reader` type provides a structured way to inject dependencies or shared configurations into computations, ensuring 
-clean separation of concerns and improving testability.
+`Reader` provides a structured way to inject dependencies or shared configurations into computations. It supports 
+`map`, `flatMap`, parallel composition with `parZip`, and local environment modification with `local`.
 
 ### License
 

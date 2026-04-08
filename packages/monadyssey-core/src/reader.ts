@@ -22,7 +22,7 @@
  *
  * // Define a Reader that fetches data using the environment's API endpoint
  * const fetchData = Reader.ask<Env>().flatMap(env =>
- *   Reader.of(fetch(`${env.apiEndpoint}/data`).then(response => response.json()))
+ *   Reader.pure(fetch(`${env.apiEndpoint}/data`).then(response => response.json()))
  * );
  *
  * // Define a function to run the Reader with a specific environment
@@ -80,13 +80,13 @@ export class Reader<R, A> {
    *
    * @example
    * // Creating a Reader that always returns the value 42
-   * const reader = Reader.of<number, number>(42);
+   * const reader = Reader.pure<number, number>(42);
    *
    * // Running the Reader with any environment will always return 42
    * console.log(reader.run(10)); // 42
    * console.log(reader.run({})); // 42
    */
-  static of<R, A>(value: A): Reader<R, A> {
+  static pure<R, A>(value: A): Reader<R, A> {
     return new Reader(() => value);
   }
 
@@ -126,11 +126,11 @@ export class Reader<R, A> {
    * @example
    * // Creating a Reader that fetches data and then processes it
    * const fetchData = Reader.ask<{ apiEndpoint: string }>().flatMap(env =>
-   *   Reader.of(fetch(`${env.apiEndpoint}/data`).then(response => response.json()))
+   *   Reader.pure(fetch(`${env.apiEndpoint}/data`).then(response => response.json()))
    * );
    *
    * const processData = fetchData.flatMap(data =>
-   *   Reader.of(data.map(item => item.value))
+   *   Reader.pure(data.map(item => item.value))
    * );
    *
    * // Running the Reader with an environment will fetch and process the data

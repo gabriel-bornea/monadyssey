@@ -19,15 +19,15 @@ describe("Option", () => {
       const value: string = "I'm here.";
       const option: Option<string> = Option.ofNullable(value);
 
-      expect(option).toEqual(Some.of("I'm here."));
+      expect(option).toEqual(Some.pure("I'm here."));
     });
   });
 
   describe("map", () => {
     it("should transform the value of a Some instance", () => {
-      const option: Option<number> = Some.of(5);
+      const option: Option<number> = Some.pure(5);
       const mapped = option.map((value) => value * 2);
-      expect(mapped).toEqual(Some.of(10));
+      expect(mapped).toEqual(Some.pure(10));
     });
 
     it("should not affect a None instance", () => {
@@ -37,7 +37,7 @@ describe("Option", () => {
     });
 
     it("should handle exception thrown by callback", () => {
-      const option: Option<number> = Some.of(5);
+      const option: Option<number> = Some.pure(5);
       expect(() => {
         option.map((_value) => {
           throw new Error("Error in callback");
@@ -46,34 +46,34 @@ describe("Option", () => {
     });
 
     it("should handle null returned by callback", () => {
-      const option: Option<number> = Some.of(5);
+      const option: Option<number> = Some.pure(5);
       const mapped = option.map((_) => null);
       expect(mapped.type).toEqual("None");
     });
 
     it("should handle undefined returned by callback", () => {
-      const option: Option<number> = Some.of(5);
+      const option: Option<number> = Some.pure(5);
       const mapped = option.map((_) => undefined);
       expect(mapped.type).toEqual("None");
     });
 
     it("should handle '0' inside the Some instance", () => {
-      const option: Option<number> = Some.of(0);
+      const option: Option<number> = Some.pure(0);
       const mapped = option.map((value) => value * 2);
-      expect(mapped).toEqual(Some.of(0));
+      expect(mapped).toEqual(Some.pure(0));
     });
   });
 
   describe("flatMap", () => {
     it("should chain operations for a Some instance", () => {
-      const option: Option<number> = Some.of(5);
-      const result = option.flatMap((value) => Some.of(value * 2));
-      expect(result).toEqual(Some.of(10));
+      const option: Option<number> = Some.pure(5);
+      const result = option.flatMap((value) => Some.pure(value * 2));
+      expect(result).toEqual(Some.pure(10));
     });
 
     it("should not affect a None instance", () => {
       const option: Option<number> = None.Instance;
-      const result = option.flatMap((value) => Some.of(value * 2));
+      const result = option.flatMap((value) => Some.pure(value * 2));
       expect(result).toEqual(None.Instance);
     });
   });
@@ -82,7 +82,7 @@ describe("Option", () => {
     it("should filter out values that do not satisfy the predicate", () => {
       const option = Option.ofNullable(5);
       const filtered = option.filter((value) => value > 3);
-      expect(filtered).toEqual(Some.of(5));
+      expect(filtered).toEqual(Some.pure(5));
     });
 
     it("should return None for values that do not satisfy the predicate", () => {
@@ -94,7 +94,7 @@ describe("Option", () => {
 
   describe("fold", () => {
     it("should execute the ifSome function for a Some instance", () => {
-      const option: Option<number> = Some.of(5);
+      const option: Option<number> = Some.pure(5);
       const result = option.fold(
         () => "No value",
         (value) => `Value is ${value}`
@@ -115,12 +115,12 @@ describe("Option", () => {
   describe("tap", () => {
     it("should execute the action for a Some instance", () => {
       let successMessage = "";
-      const option: Option<number> = Some.of(5);
+      const option: Option<number> = Some.pure(5);
       const result = option.tap((value) => {
         successMessage = `Value is ${value}`;
       });
       expect(successMessage).toBe("Value is 5");
-      expect(result).toEqual(Some.of(5));
+      expect(result).toEqual(Some.pure(5));
     });
 
     it("should not execute the action for a None instance", () => {
@@ -147,18 +147,18 @@ describe("Option", () => {
 
     it("should not execute the action for a Some instance", () => {
       let message = "";
-      const option: Option<number> = Some.of(5);
+      const option: Option<number> = Some.pure(5);
       const result = option.tapNone(() => {
         message = "No value";
       });
       expect(message).toBe("");
-      expect(result).toEqual(Some.of(5));
+      expect(result).toEqual(Some.pure(5));
     });
   });
 
   describe("getOrNull", () => {
     it("should return the value for a Some instance", () => {
-      const option: Option<number> = Some.of(5);
+      const option: Option<number> = Some.pure(5);
       const result = option.getOrNull();
       expect(result).toBe(5);
     });
@@ -172,7 +172,7 @@ describe("Option", () => {
 
   describe("getOrElse", () => {
     it("should return the value for a Some instance", () => {
-      const option: Option<number> = Some.of(5);
+      const option: Option<number> = Some.pure(5);
       const result = option.getOrElse(() => 0);
       expect(result).toBe(5);
     });

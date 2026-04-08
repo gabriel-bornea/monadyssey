@@ -75,10 +75,10 @@ export abstract class Either<A, B> {
 
   static catch<A, B>(fn: () => B, liftE?: (e: unknown) => A): Left<string> | Left<A> | Right<B> {
     try {
-      return Right.of(fn());
+      return Right.pure(fn());
     } catch (e: unknown) {
       if (liftE) {
-        return Left.of(liftE(e));
+        return Left.pure(liftE(e));
       }
 
       const defaultLiftE = (e: unknown): string => {
@@ -90,7 +90,7 @@ export abstract class Either<A, B> {
           return String(e);
         }
       };
-      return Left.of(defaultLiftE(e));
+      return Left.pure(defaultLiftE(e));
     }
   }
 
@@ -99,7 +99,7 @@ export abstract class Either<A, B> {
    * @param f - A transformation function to apply to the right value.
    * @returns A new Either instance with the transformed value if this is a Right; otherwise, a Left.
    * @example
-   * const result = Right.of(5).map(x => x * 2); // Returns Right(10)
+   * const result = Right.pure(5).map(x => x * 2); // Returns Right(10)
    */
   abstract map<C>(f: (right: B) => C): Either<A, C>;
 
@@ -108,7 +108,7 @@ export abstract class Either<A, B> {
    * @param f - A transformation function to apply to the left value.
    * @returns A new Either instance with the transformed value if this is a Left; otherwise, a Right.
    * @example
-   * const result = Left.of(5).mapLeft(x => x * 2); // Returns Left(10)
+   * const result = Left.pure(5).mapLeft(x => x * 2); // Returns Left(10)
    */
   abstract mapLeft<C>(f: (left: A) => C): Either<C, B>;
 
@@ -118,7 +118,7 @@ export abstract class Either<A, B> {
    * @param f - A transformation function to apply that returns an Either.
    * @returns The result of the function if this is a Right; otherwise, a Left.
    * @example
-   * const result = Right.of(5).flatMap(x => Right.of(x * 2)); // Returns Right(10)
+   * const result = Right.pure(5).flatMap(x => Right.pure(x * 2)); // Returns Right(10)
    */
   abstract flatMap<C>(f: (right: B) => Either<A, C>): Either<A, C>;
 
@@ -127,8 +127,8 @@ export abstract class Either<A, B> {
    * @param value - A function that returns the default value.
    * @returns The value of `Right` or the result of `value`.
    * @example
-   * Right.of(5).getOrElse(() => 0); // Returns 5
-   * Left.of("error").getOrElse(() => 0); // Returns 0
+   * Right.pure(5).getOrElse(() => 0); // Returns 5
+   * Left.pure("error").getOrElse(() => 0); // Returns 0
    */
   abstract getOrElse(value: (left: A) => B): B;
 
@@ -150,7 +150,7 @@ export abstract class Either<A, B> {
    * @param ifRight - A function to handle a Right value.
    * @returns The result of the applied function.
    * @example
-   * const result = Right.of(5).fold(
+   * const result = Right.pure(5).fold(
    *   error => 'Error occurred',
    *   value => 'Success with ' + value
    * ); // Returns 'Success with 5'
@@ -162,7 +162,7 @@ export abstract class Either<A, B> {
    * @param action - A function to execute with the right value.
    * @returns The original Either instance, facilitating method chaining.
    * @example
-   * Right.of(5).onRight(value => console.log(value)); // Logs "5"
+   * Right.pure(5).onRight(value => console.log(value)); // Logs "5"
    */
   abstract tap(action: (right: B) => void): Either<A, B>;
 
@@ -171,7 +171,7 @@ export abstract class Either<A, B> {
    * @param action - A function to execute with the left value.
    * @returns The original Either instance, facilitating method chaining.
    * @example
-   * Left.of('Error').onLeft(err => console.log(err)); // Logs "Error"
+   * Left.pure('Error').onLeft(err => console.log(err)); // Logs "Error"
    */
   abstract tapLeft(action: (left: A) => void): Either<A, B>;
 }
@@ -185,7 +185,7 @@ export class Left<A> extends Either<A, never> {
     super();
   }
 
-  static of<A>(value: A): Left<A> {
+  static pure<A>(value: A): Left<A> {
     return new Left<A>(value);
   }
 
@@ -210,7 +210,7 @@ export class Left<A> extends Either<A, never> {
   }
 
   swap(): Either<never, A> {
-    return Right.of(this.value);
+    return Right.pure(this.value);
   }
 
   fold<C>(ifLeft: (left: A) => C, _: (right: never) => C): C {
@@ -236,7 +236,7 @@ export class Right<B> extends Either<never, B> {
     super();
   }
 
-  static of<B>(value: B): Right<B> {
+  static pure<B>(value: B): Right<B> {
     return new Right<B>(value);
   }
 
@@ -261,7 +261,7 @@ export class Right<B> extends Either<never, B> {
   }
 
   swap(): Either<B, never> {
-    return Left.of(this.value);
+    return Left.pure(this.value);
   }
 
   fold<C>(_: (left: never) => C, ifRight: (right: B) => C): C {

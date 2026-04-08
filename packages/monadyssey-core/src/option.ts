@@ -21,7 +21,7 @@ export abstract class Option<A> {
    * const maybeNull = Option.ofNullable(null); // Returns None
    */
   static ofNullable<A>(value: A | null | undefined): Option<NonNullable<A>> {
-    return value === null || value === undefined ? None.Instance : Some.of(value as NonNullable<A>);
+    return value === null || value === undefined ? None.Instance : Some.pure(value as NonNullable<A>);
   }
 
   /**
@@ -51,7 +51,7 @@ export abstract class Option<A> {
   map<B>(f: (value: A) => B): Option<B> {
     return this.flatMap((value) => {
       const result = f(value);
-      return result === null || result === undefined ? None.Instance : Some.of(result as NonNullable<B>);
+      return result === null || result === undefined ? None.Instance : Some.pure(result as NonNullable<B>);
     });
   }
 
@@ -191,9 +191,9 @@ export class Some<A> extends Option<NonNullable<A>> {
    * @param value - The value to wrap.
    * @returns A `Some` instance containing the value.
    * @example
-   * const someOption = Some.of(10);
+   * const someOption = Some.pure(10);
    */
-  static of<A>(value: NonNullable<A>): Some<NonNullable<A>> {
+  static pure<A>(value: NonNullable<A>): Some<NonNullable<A>> {
     return new Some<NonNullable<A>>(value);
   }
 

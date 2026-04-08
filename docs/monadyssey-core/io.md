@@ -1,296 +1,642 @@
-### Introduction to the IO Data Type
+# IO
 
-In programming, **side effects**—like reading from a database, writing to a file, or making an API call—are 
-everywhere. While side effects are essential for most applications, they introduce complexity: they make code harder 
-to test, less predictable, and more challenging to reason about. Side effects can happen at unexpected times, or 
-their results may vary depending on external systems, making them a common source of bugs and unreliability.
+`IO<E, A>` is a lazy, composable description of an effectful computation that may succeed with a value of type `A` or fail with an error of type `E`.
 
-On top of that, managing side effects often intertwines with handling errors. Too often, errors are treated as 
-afterthoughts—addressed only when they cause failures. They rarely become part of the domain itself, leading to 
-scattered try-catch blocks and inconsistent error management.
+Nothing runs until you call a terminal method like `unsafeRun()`. Until then, `IO` is just a value — you can pass it around, compose it, and test it without triggering side effects.
 
-The `IO` data type addresses these challenges head-on by encapsulating side effects into a controlled, composable 
-abstraction. It enables us to describe computations—including their potential errors—without executing 
-them. This laziness ensures that side effects only occur when explicitly triggered, making workflows more 
-predictable, easier to test, and less error-prone.
-
-Moreover, `IO` embeds error handling into its very structure. By representing computations as operations that may 
-succeed (`Ok<A>`) or fail (`Err<E>`), it forces us to acknowledge potential failures upfront, integrating 
-errors as a first-class part of the domain. This approach helps avoid surprises in production by encouraging 
-thoughtful error management during development.
-
-Most importantly, `IO` is a value. As a value, `IO` is referentially transparent, meaning it behaves predictably 
-and consistently, regardless of when or where it is used. This property transforms how we reason about 
-code, enabling us to build maintainable systems and confidently compose complex workflows.
-
-At its core, `IO` is a container for an asynchronous computation that produces a result. This result is either:
-* A success (`Ok<A>`), encapsulating the value of type `A`.
-* A failure (`Err<E>`), encapsulating an error of type `E`.
-
-Unlike immediately executed functions, `IO` instances are lazy. They describe computations without executing them 
-until explicitly triggered (e.g., using the `runAsync` method). This laziness enables `IO` to serve as a *blueprint* 
-for assembling workflows, where each operation is deferred until the entire workflow is ready to run.
-
-To better understand how to use `IO` in a real-world scenario, let’s consider an application that displays the 
-current weather for a user's location. To achieve this, we’ll:
-
-* Retrieve the user's current latitude and longitude using their IP address.
-* Validate the latitude and longitude values.
-* Fetch the current weather data based on these coordinates.
-* Transform the weather data into a user-friendly format for display.
-
-We’ll use `IO` to manage these operations, encapsulating side effects, ensuring predictable workflows, and handling 
-errors consistently.
-
-### Step 1: Retrieve the user's current location
-
-Let’s start with the first step: retrieving the user's current location. This involves making a network request to an 
-external service, such as *ipinfo.io*, which provides location information based on the user's IP address.
+Internally, `IO` builds an immutable tree of operations (an ADT). When executed, a trampoline interpreter walks the tree with an explicit stack, so arbitrarily deep chains are stack-safe.
 
 ```typescript
 import { IO } from "monadyssey";
-import { HttpClient } from "monadyssey-fetch";
-import { CurrentLocation } from "./types";
-import { UserLocationError, ApplicationError } from "./error";
-
-export const getCurrentLocation = (): IO<ApplicationError, CurrentLocation> =>
-  HttpClient
-    .get('https://ipinfo.io/json', { credentials: 'omit' })
-    .mapError((e) => new UserLocationError(e.message));
 ```
-If we look at the return type, we're not just returning the location—we're also representing the possibility that 
-the operation might fail. At first glance, `ApplicationError` might seem a bit generic, and that’s intentional. 
-It’s designed to encompass multiple error types, such as `UserLocationError` or `WeatherRetrievalError`, allowing us 
-to reason about all possible failure scenarios in a structured and type-safe way:
+
+---
+
+## Table of Contents
+
+- [Creating IOs](#creating-ios)
+- [Transforming Values](#transforming-values)
+- [Error Handling](#error-handling)
+- [Side Effects](#side-effects)
+- [Validation](#validation)
+- [Resource Safety](#resource-safety)
+- [Timeout](#timeout)
+- [Composition](#composition)
+- [Parallelism](#parallelism)
+- [Cancellation](#cancellation)
+- [Scheduling](#scheduling)
+- [Running](#running)
+- [Result Types](#result-types)
+
+---
+
+## Creating IOs
+
+### `IO.lift`
+
+Wraps a synchronous or asynchronous function into an IO. The function is not called until the IO is executed.
+
 ```typescript
-type ApplicationError = UserLocationError | WeatherRetrievalError | InvalidLocationError;
+static lift<E, A>(f: (signal?: AbortSignal) => A | Promise<A>, liftE?: (e: unknown) => E): IO<E, A>
 ```
-This makes errors composable: `ApplicationError` is effectively a **sum type**, meaning it combines multiple distinct 
-error cases into a single type.
 
-Another thing you might have noticed is the use of `HttpClient.get` for making the HTTP request to *ipinfo.io*. 
-The `HttpClient` is part of the `monadyssey-fetch` package, and it wraps the native fetch API to provide a safer and 
-more functional approach to HTTP requests.
-
-Instead of returning a `Promise`, `HttpClient` methods return an `IO` instance. This subtle yet powerful change 
-brings several advantages:
-
-* **Deferred Execution**: Like all `IO` operations, the request is described but not executed until explicitly 
-triggered. This ensures the operation is referentially transparent, meaning it behaves predictably and consistently 
-wherever it’s used.
-* **Error Handling**: Any errors encountered during the request are captured and propagated as part of the `IO` 
-instance. This allows us to handle errors in a type-safe and structured way, as shown in the `getCurrentLocation` 
-function.
-* **Functional Composition**: By returning `IO`, the `HttpClient` allows us to chain and compose HTTP requests with 
-other `IO` operations, creating seamless workflows without losing control over side effects.
-
-### Step 2: Extracting Latitude and Longitude
-
-Now that we have the user's location, the next step is to extract the latitude and longitude from the `CurrentLocation` 
-object. This involves parsing a string (e.g., `"37.7749,-122.4194"`) into a tuple of numbers `[latitude, longitude]`. 
-Using `IO`, we can handle this operation safely, ensuring errors are captured and validated.
-
-Here’s how we define the `getLatitudeAndLongitude` function:
 ```typescript
-export const getLatitudeAndLongitude = (location: CurrentLocation): IO<ApplicationError, [number, number]> =>
-  IO.ofSync(
-    () => location.loc.split(",").map(Number),
-    (e) => new InvalidLocationError(e instanceof Error ? e.message : "Failed to parse user location")
-  ).refine(
-    ([lat, lon]) => !isNaN(lat) && !isNaN(lon),
-    () => new InvalidLocationError("Invalid latitude or longitude values")
+// Sync
+const effect = IO.lift(() => 42);
+
+// Async
+const effect = IO.lift(() => fetch("/api/data").then(r => r.json()));
+
+// With error transformation
+const effect = IO.lift(
+  () => riskyOperation(),
+  (e) => new AppError(String(e))
+);
+```
+
+The optional `liftE` parameter transforms caught exceptions into the error type `E`. Without it, the raw exception is placed in the error channel.
+
+---
+
+### `IO.pure`
+
+Wraps an already-computed value. No deferred computation takes place.
+
+```typescript
+static pure<A>(a: A): IO<never, A>
+```
+
+```typescript
+const effect = IO.pure(42);
+// result: { type: "Ok", value: 42 }
+```
+
+---
+
+### `IO.fail`
+
+Creates an IO that fails immediately with the given error.
+
+```typescript
+static fail<E, A = never>(error: E): IO<E, A>
+```
+
+```typescript
+const effect = IO.fail(new AppError("not found"));
+// result: { type: "Err", error: AppError("not found") }
+```
+
+---
+
+### `IO.unit`
+
+An IO that succeeds with `void`. Useful as a no-op.
+
+```typescript
+static readonly unit: IO<never, void>
+```
+
+---
+
+### `IO.cancellable`
+
+Creates an IO from a function that receives an `AbortSignal` for cooperative cancellation. Use this when the underlying operation supports cancellation (fetch, streams, timers).
+
+```typescript
+static cancellable<E, A>(f: (signal: AbortSignal) => A | Promise<A>, liftE?: (e: unknown) => E): IO<E, A>
+```
+
+```typescript
+const operation = IO.cancellable<AppError, Response>(
+  (signal) => fetch("/api/data", { signal }),
+  (e) => new AppError(String(e))
+);
+```
+
+See [Cancellation](#cancellation) for details on how this works with `fork()`.
+
+---
+
+## Transforming Values
+
+### `map`
+
+Transforms the success value. If the IO fails, the function is not called.
+
+```typescript
+map<B>(f: (a: A) => B): IO<E, B>
+```
+
+```typescript
+const effect = IO.lift(() => 21).map(n => n * 2);
+// result: { type: "Ok", value: 42 }
+```
+
+---
+
+### `flatMap`
+
+Chains a dependent IO on the success value. This is monadic bind — each step can depend on the previous result.
+
+```typescript
+flatMap<B>(f: (a: A) => IO<E, B>): IO<E, B>
+```
+
+```typescript
+const operation = IO.lift(() => fetchUserId())
+  .flatMap(id => IO.lift(() => fetchUser(id)));
+```
+
+---
+
+### `bimap`
+
+Transforms both the error and success channels at the same time.
+
+```typescript
+bimap<F, B>(fe: (e: E) => F, fa: (a: A) => B): IO<F, B>
+```
+
+```typescript
+const effect = IO.lift(() => 42).bimap(
+  err => `Error: ${err}`,
+  val => val * 2
+);
+```
+
+---
+
+## Error Handling
+
+### `mapErr`
+
+Transforms the error value. If the IO succeeds, the function is not called.
+
+```typescript
+mapErr<F>(f: (e: E) => F): IO<F, A>
+```
+
+```typescript
+const effect = IO.lift(() => { throw new Error("boom"); })
+  .mapErr(e => new AppError(e.message));
+```
+
+---
+
+### `flatMapErr`
+
+Chains a dependent IO on the error value. Use this for error recovery — the returned IO can succeed or fail with a new error.
+
+```typescript
+flatMapErr(f: (error: E) => IO<E, A>): IO<E, A>
+```
+
+```typescript
+const operation = IO.fail("primary failed")
+  .flatMapErr(err => IO.lift(() => fetchFromFallback()));
+```
+
+---
+
+### `foldM`
+
+Monadic fold — branches on both success and error, where each arm returns a new IO. Unlike `fold` (which is terminal), `foldM` produces a composable IO.
+
+```typescript
+foldM<F, B>(onErr: (e: E) => IO<F, B>, onOk: (a: A) => IO<F, B>): IO<F, B>
+```
+
+```typescript
+const effect = IO.lift(() => riskyOp()).foldM(
+  err => IO.fail(`Recovered: ${err}`),
+  val => IO.pure(val * 2)
+);
+```
+
+---
+
+## Side Effects
+
+### `tap`
+
+Runs a side effect on the success value without changing the result. If the side effect throws, the exception is swallowed.
+
+```typescript
+tap(f: (a: A) => void | Promise<void>): IO<E, A>
+```
+
+```typescript
+const effect = IO.lift(() => 42).tap(value => console.log("Got:", value));
+```
+
+---
+
+### `tapErr`
+
+Runs a side effect on the error value without changing the result. If the side effect throws, the exception is swallowed.
+
+```typescript
+tapErr(f: (e: E) => void | Promise<void>): IO<E, A>
+```
+
+```typescript
+const effect = IO.fail(new AppError("boom"))
+  .tapErr(e => logger.error(e));
+```
+
+---
+
+## Validation
+
+### `ensure`
+
+Validates the success value against a predicate. If the predicate returns `false`, the value is converted into an error using `liftE`.
+
+```typescript
+ensure(predicate: (a: A) => boolean, liftE: (a: A) => E): IO<E, A>
+```
+
+```typescript
+const effect = IO.lift(() => fetchAge())
+  .ensure(
+    age => age >= 18,
+    age => new ValidationError(`Must be 18+, got ${age}`)
   );
 ```
-#### Explanation:
-- **Parsing the Coordinates**
-  * The `IO.ofSync` wraps the synchronous parsing logic.
-  * If an error occurs during parsing (e.g., the `loc` string is malformed), it is captured and transformed into an
-    `InvalidLocationError`.
-- **Error Transformation**
-  * The second argument of `IO.ofSync` converts any error into a domain-specific error.
-  * This ensures that the error handling remains consistent and type-safe.
-- **Validation**
-  * After parsing, we validate that both `latitude` and `longitude` are valid numbers.
-  * If validation fails, `InvalidLocationError` is returned with a descriptive message.
 
-`refine` allows for conditional validation of the result within the `IO`, enabling the
-creation of more complex logical flows where the outcome of an operation can be refined or altered
-based on dynamic conditions. It is particularly useful for cases where an operation's success needs
-to be further qualified by additional criteria not covered by the operation itself.
+---
 
-This step ensures that parsing and validation of critical location data are performed safely and predictably. By 
-combining `IO.ofSync` and `refine`, we encapsulate both the operation and its potential failure cases in a single 
-composable unit. This approach avoids scattered error handling, ensuring workflows remain structured and maintainable.
+## Resource Safety
 
-### Step 3: Fetching Weather Data
+### `IO.bracket`
 
-Once we have validated the user's latitude and longitude, the next step is to fetch the current weather data 
-for their location. This involves making a network request to an external weather API. Using `IO`, we can 
-encapsulate the HTTP request and handle any potential errors in a structured and type-safe way.
+Guarantees resource cleanup by structuring code into three phases: **acquire**, **use**, and **release**. The release action always runs — whether use succeeds, fails, or is cancelled.
+
 ```typescript
-export const getCurrentWeatherData = (latitude: Number, longitude: Number): IO<ApplicationError, Weather> =>
-  HttpClient
-    .get(
-      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`,
-      { credentials: 'omit' }
-    )
-    .mapError(e => new WeatherRetrievalError(e.message));
+static bracket<E, R, A>(
+  acquire: IO<E, R>,
+  use: (r: R) => IO<E, A>,
+  release: (r: R) => IO<never, void>
+): IO<E, A>
 ```
-#### Explanation:
-- **Making the Request**
-  * The `HttpClient.get` method sends a GET request to the Open-Meteo API, including the latitude and longitude 
-as query parameters.
-  * The API returns a response containing the current weather data, which we aim to encapsulate in the `Weather` type.
-- **Error Handling**
-  * Any errors that occur during the HTTP request are captured and transformed into a domain-specific `WeatherRetrievalError`. 
-This ensures that the error is meaningful and tied to the operation that caused it.
-  * By embedding this error handling directly in the `IO` operation, we make it easier to reason about and handle failures.
-- **Composability**
-  * The result of this function is an `IO<ApplicationError, Weather>`. This means it can be seamlessly composed with 
-other `IO` operations, enabling the creation of complex workflows without losing control over side effects or error 
-propagation.
-
-By encapsulating the weather retrieval logic in an `IO`, we:
-
-* Keep the side effect (the HTTP request) deferred until explicitly triggered.
-* Handle errors in a structured and type-safe manner, transforming them into domain-specific types like WeatherRetrievalError.
-* Maintain a clean separation of concerns, allowing this step to integrate smoothly into a broader workflow.
-
-### Step 4: Transforming Weather Data
-
-With the weather data successfully retrieved, the final step is to transform it into a format suitable for display. 
-By combining the user's location with the weather data, we can create a `CurrentConditions` object that contains all 
-the necessary details in a user-friendly format.
-
-Since this is a pure transformation function, it has no side effects and doesn't perform any I/O operations. This 
-means it is predictable and consistent, always producing the same output for the same inputs. Because of this, we 
-don’t need to wrap it inside an `IO`—it’s safe to use as a direct function.
 
 ```typescript
-export const mapToConditions = (location: CurrentLocation, weather: Weather): CurrentConditions => {
-  // Combine location and weather data into a user-friendly format
+const operation = IO.bracket(
+  IO.lift(() => openConnection()),
+  (conn) => IO.lift(() => conn.query("SELECT * FROM users")),
+  (conn) => IO.lift(() => conn.close())
+);
+```
+
+Semantics:
+- If **acquire** fails or is cancelled, `use` and `release` are never called.
+- If **use** succeeds, fails, or is cancelled, `release` always runs.
+- **Release** runs without an `AbortSignal` — it always completes.
+- If release itself fails, the error is swallowed and the use result takes priority.
+
+Brackets nest correctly — inner resources are released before outer ones:
+
+```typescript
+const operation = IO.bracket(
+  acquirePool(),
+  (pool) => IO.bracket(
+    acquireConnection(pool),
+    (conn) => queryUsers(conn),
+    (conn) => IO.lift(() => conn.release())
+  ),
+  (pool) => IO.lift(() => pool.shutdown())
+);
+```
+
+---
+
+## Timeout
+
+### `timeout`
+
+Applies a deadline to an IO. If the computation does not complete within `ms` milliseconds, it is cancelled and the error produced by `onTimeout` is returned.
+
+```typescript
+timeout<F>(ms: number, onTimeout: () => F): IO<E | F, A>
+```
+
+```typescript
+const operation = IO.lift(() => fetch("/api/slow"))
+  .timeout(5000, () => new TimeoutError("Request exceeded 5s"));
+```
+
+The timeout error type `F` is unioned with the original error type `E`, so the caller must handle both.
+
+The underlying computation is cancelled via `AbortSignal` when the timeout fires. If the computation completes before the deadline, the timer is cleared.
+
+```typescript
+// Composable with mapErr to unify error types
+const operation = fetchUser(id)
+  .timeout(3000, () => ({ code: "TIMEOUT" as const }))
+  .mapErr(e => normalizeError(e));
+```
+
+---
+
+## Composition
+
+### `IO.Do`
+
+Do-notation for sequencing IO operations using async/await style. Call `bind(io)` to execute an IO and get its value. If any bound IO fails, the entire block short-circuits.
+
+```typescript
+static Do<E, A>(
+  operation: (bind: <B>(effect: IO<E, B>) => Promise<B>) => Promise<A>,
+  liftE?: (e: unknown) => E
+): IO<E, A>
+```
+
+```typescript
+const operation = IO.Do<AppError, CurrentConditions>(async bind => {
+  const location = await bind(getCurrentLocation());
+  const [lat, lon] = await bind(getLatitudeAndLongitude(location));
+  const weather = await bind(getCurrentWeatherData(lat, lon));
+  return mapToConditions(location, weather);
+});
+```
+
+This is equivalent to nested `flatMap` calls but more readable. The optional `liftE` parameter transforms non-IO exceptions thrown inside the block into the error type `E`.
+
+---
+
+### `IO.traverse`
+
+Sequentially runs a function over each item, collecting results. Fail-fast — stops on the first error.
+
+```typescript
+static traverse<E, A, B>(items: A[], f: (a: A) => IO<E, B>): IO<E, B[]>
+```
+
+```typescript
+const operation = IO.traverse([1, 2, 3], id => fetchUser(id));
+```
+
+---
+
+### `IO.sequence`
+
+Sequentially runs an array of IOs, collecting results. Equivalent to `traverse(ios, x => x)`.
+
+```typescript
+static sequence<E, A>(ios: IO<E, A>[]): IO<E, A[]>
+```
+
+---
+
+## Parallelism
+
+### `IO.parMapN`
+
+Runs multiple IOs in parallel and combines their results with a function. If any fail, all errors are collected into a `NonEmptyList`.
+
+```typescript
+// 2-6 IO overloads available
+static parMapN<E1, E2, A1, A2, R>(
+  io1: IO<E1, A1>,
+  io2: IO<E2, A2>,
+  f: (a1: A1, a2: A2) => R
+): IO<NonEmptyList<E1 | E2>, R>
+```
+
+```typescript
+const operation = IO.parMapN(
+  IO.lift(() => fetchUser()),
+  IO.lift(() => fetchOrders()),
+  (user, orders) => ({ user, orders })
+);
+```
+
+---
+
+### `IO.parTraverse`
+
+Runs a function over each item in parallel, collecting all results or all errors.
+
+```typescript
+static parTraverse<E, A, B>(items: A[], f: (a: A) => IO<E, B>): IO<NonEmptyList<E>, B[]>
+```
+
+---
+
+### `IO.parSequence`
+
+Runs an array of IOs in parallel, collecting all results or all errors.
+
+```typescript
+static parSequence<E, A>(ios: IO<E, A>[]): IO<NonEmptyList<E>, A[]>
+```
+
+---
+
+### `IO.race`
+
+Races multiple IOs. Returns the first one to succeed. If all fail, returns a `NonEmptyList` of all errors.
+
+```typescript
+static race<E, A>(...ops: IO<E, A>[]): IO<NonEmptyList<E>, A>
+```
+
+```typescript
+const operation = IO.race(
+  IO.lift(() => fetchFromPrimary()),
+  IO.lift(() => fetchFromFallback())
+);
+```
+
+When one IO succeeds, the remaining IOs are cancelled via `AbortSignal`.
+
+---
+
+## Cancellation
+
+IO supports structural cancellation through `Fiber`, `fork()`, and `AbortSignal`.
+
+### `fork`
+
+Starts an IO as a background computation, returning a `Fiber` handle.
+
+```typescript
+fork(): IO<never, Fiber<E, A>>
+```
+
+```typescript
+const operation = IO.Do<AppError, string>(async bind => {
+  const fiber = await bind(longRunningTask.fork());
+  // ... do other work ...
+  const result = await fiber.join();
+  return result.type === "Ok" ? result.value : "fallback";
+});
+```
+
+### `Fiber<E, A>`
+
+The handle returned by `fork()`:
+
+```typescript
+interface Fiber<E, A> {
+  join: () => Promise<Ok<A> | Err<E> | Cancelled>;
+  cancel: () => Promise<void>;
+  signal: AbortSignal;
 }
 ```
 
-### Putting It All Together
-With all the steps defined above, combining them into a single workflow is straightforward. The power of `IO` lies in 
-its ability to compose operations seamlessly while maintaining predictable behavior and structured error handling. 
-Here’s how we implement the complete `getCurrentWeather` function:
+- `join()` waits for the computation to complete. Returns `Ok`, `Err`, or `Cancelled`.
+- `cancel()` requests cancellation. Idempotent. Resolves after finalizers run.
+- `signal` exposes the underlying `AbortSignal` for interop with platform APIs.
+
+### `onCancel`
+
+Registers a cleanup action that runs only if the IO is cancelled. Finalizers run in LIFO order (innermost first).
+
 ```typescript
-getCurrentWeather = (): IO<ApplicationError, CurrentConditions> =>
-  getCurrentLocation()
-    .flatMap((location) =>
-      getLatitudeAndLongitude(location)
-        .flatMap(([lat, lon]) =>
-          getCurrentWeatherData(lat, lon)
-            .map((weather) =>
-              mapToConditions(location, weather)
-            )
-        )
-    );
+onCancel(finalizer: () => void | Promise<void>): IO<E, A>
 ```
-The function composes the entire workflow by chaining each step—retrieving the user's location, extracting and 
-validating coordinates, fetching weather data, and transforming the results into a displayable format—while ensuring 
-errors are handled at each stage, side effects remain controlled, and the workflow is executed predictably when triggered.
 
-However, relying on nested `flatMap` calls for composition can affect readability and maintainability. Despite the 
-advantages offered by `IO`, many developers might find an `async/await` approach based on `Promises` more intuitive and 
-easier to work with in complex workflows.
-
-For this reason, `IO` provides the `forM` function, which abstracts the chaining of nested `flatMap` calls into a more 
-readable and maintainable structure. Here's how the same `getCurrentWeather` function can be implemented using `forM`:
 ```typescript
-getCurrentWeather = (): IO<ApplicationError, CurrentConditions> =>
-  IO.forM(async (bind) => {
-    const location = await bind(getCurrentLocation());
-    const [latitude, longitude] = await bind(getLatitudeAndLongitude(location));
-    const weather = await bind(getCurrentWeatherData(latitude, longitude));
-
-    return mapToConditions(location, weather);
-  });
+const operation = IO.cancellable((signal) => fetch("/api", { signal }))
+  .onCancel(() => console.log("Request was cancelled"));
 ```
-This approach combines the readability of `async/await` with the benefits of `IO`, such as controlled side effects and 
-composable error handling. By using `forM`, developers can write workflows in a sequential, imperative style while 
-retaining the functional guarantees of `IO`.
 
-The `forM` function lets us sequence multiple `IO` operations using an `async/await` style, making it easier to manage
-workflows with dependent steps. Inside `forM`, we use the provided `bind` helper to execute each `IO` operation and 
-retrieve its result.
+### How cancellation works
 
-As we mentioned earlier, `IO` operations are lazy. This means that when we call the `getCurrentWeather` function, we 
-don’t immediately trigger any of the operations. Instead, we get back a value—an `IO` instance—that encapsulates the 
-workflow without executing it:
+1. `fork()` creates an `AbortController` and runs the IO with its signal.
+2. `cancel()` calls `controller.abort()`.
+3. The interpreter checks `signal.aborted` between each step in the computation tree.
+4. When cancelled, `OnCancel` finalizers on the stack are run in LIFO order.
+5. `join()` returns `{ type: "Cancelled" }`.
+
+For IOs created with `IO.lift`, cancellation is **structural** — checked between frames. For IOs created with `IO.cancellable`, cancellation is **cooperative** — the signal is passed to user code (e.g., `fetch(url, { signal })`), allowing the operation itself to abort.
+
+`unsafeRun()` does not pass a signal, so cancellation only applies to forked computations.
+
+---
+
+## Scheduling
+
+### `retryIf`
+
+Retries the IO when a condition on the error is met, using a scheduling policy with configurable delay, backoff factor, and jitter.
+
 ```typescript
-const conditions: IO<ApplicationError, CurrentConditions> = this.getCurrentWeather();
+retryIf(
+  condition: (error: E) => boolean,
+  liftE: (error: Error) => E,
+  policy?: Policy
+): IO<E, A>
 ```
-At this point, nothing has been executed. The `IO` merely holds a description of the operations to be performed. This 
-deferred execution ensures that side effects only occur when explicitly triggered, giving us precise control over when 
-and how they are executed.
-
-### Executing the `IO` with `runAsync`
-To execute the operations described in an `IO`, we use the `runAsync` method. This method triggers the deferred 
-computation and returns a `Promise` that resolves to the result of the operation. The result is wrapped in either:
-* `Err<E>`: Representing a failure with an error of type `E`.
-* `Ok<A>`: Representing a success with a value of type `A`.
 
 ```typescript
-const result: Err<ApplicationError> | Ok<CurrentConditions> = await this.getCurrentWeather().runAsync();
+const operation = IO.lift(() => fetchData())
+  .retryIf(
+    err => err instanceof NetworkError,
+    e => new AppError(e.message),
+    { recurs: 5, delay: 1000, factor: 2 }
+  );
 ```
-#### Key points
-1. **Controlled execution**: Until `runAsync` is called, the `IO` remains a blueprint and no side effects occur.
-2. **Structured result**: Instead of directly resolving to a value or throwing an error, `runAsync` wraps the result 
-in `Ok<A>` or `Err<E>`. This ensures that errors are handled in a consistent, type-safe manner.
 
-By always returning a structured result (`Ok<A>` or `Err<E>`), `runAsync` ensures that errors are handled consistently 
-across all `IO` operations. This eliminates unexpected exceptions and promotes a unified approach to managing both 
-success and failure scenarios. With `runAsync`, we can confidently handle errors as part of their domain logic, making 
-our applications more predictable and maintainable.
+The default policy is 3 retries, 1.2x backoff, 1s initial delay.
 
-However, `runAsync` is not the only way to execute an `IO`. Depending on our needs, we can use other methods that 
-provide different ways of handling the result:
+`liftE` transforms schedule errors (`RetryError`, `TimeoutError`, `ConditionalRetryError`) into the error type `E`.
 
-* `fold`: executes the IO and applies one of two functions based on the outcome:
-  * A failure handler (`onFailure`) to transform the error into a value.
-  * A success handler (`onSuccess`) to transform the result into a value.
+See `Policy` for all options: `recurs`, `factor`, `delay`, `timeout` (per-attempt), `jitter`.
+
+---
+
+## Running
+
+These are terminal methods — they execute the IO and return a result.
+
+### `unsafeRun`
+
+Executes the IO and returns the structured result.
+
 ```typescript
-await this.getCurrentWeather().fold(
-  (e: ApplicationError) => console.error(e.message),
-  (conditions: CurrentConditions) => this.conditions = conditions
+async unsafeRun(): Promise<Ok<A> | Err<E>>
+```
+
+```typescript
+const result = await IO.lift(() => 42).unsafeRun();
+// { type: "Ok", value: 42 }
+```
+
+---
+
+### `fold`
+
+Executes the IO and maps both outcomes into a single type.
+
+```typescript
+async fold<B>(onErr: (e: E) => B, onOk: (a: A) => B): Promise<B>
+```
+
+```typescript
+const message = await IO.lift(() => 42).fold(
+  err => `Failed: ${err}`,
+  val => `Got: ${val}`
 );
 ```
-This is particularly useful when we need to normalize the result into a single type.
-* `getOrNull`: executes the `IO` and returns the result if successful or `null` if it fails. It's helpful when failure 
-details are not needed, and the presence of a value is enough.
-```typescript
-const result: CurrentConditions | null = await this.getCurrentWeather().getOrNull();
-```
-* `getOrElse`: executes the `IO` and returns the result if successful or a provided default value if it fails. 
-The default value can be a constant or a function.
-```typescript
-const result: CurrentConditions = await this.getCurrentWeather().getOrElse(() => {
-  return {
-    city: "Bucharest",
-    temperature: 23.5
-  }
-});
-```
-* `getOrHandle`: executes the `IO` and returns the result if successful or invokes a handler function to handle 
-the error and provide an alternative value.
-```typescript
-const result: CurrentConditions = await this.getCurrentWeather()
-  .getOrHandle((e: ApplicationError) => {
-    // Provide a fallback value in case of an error
-    return {
-      city: "Bucharest",
-      temperature: 23.5
-    }
-  });
-```
-The `IO` data type offers a powerful abstraction for managing side effects, error handling, and composability in a 
-predictable and structured way. By encapsulating computations as lazy, referentially transparent operations, `IO` 
-ensures **side effects** only occur when explicitly triggered. This approach promotes clean, maintainable code while 
-allowing us to handle errors as **first-class citizens** within our domain.
 
-If you'd like to see a full working example of these concepts in action, check out the [monadyssey showcase](https://github.com/gabriel-bornea/monadyssey-showcase). 
-The showcase demonstrates how to integrate `IO` into an application that retrieves and displays weather data, 
-combining functional programming principles with real-world use cases.
+---
+
+### `getOrNull`
+
+Returns the success value, or `null` on failure.
+
+```typescript
+async getOrNull(): Promise<A | null>
+```
+
+---
+
+### `getOrElse`
+
+Returns the success value, or evaluates a default on failure.
+
+```typescript
+async getOrElse(defaultValue: () => A): Promise<A>
+```
+
+```typescript
+const value = await IO.fail("err").getOrElse(() => 0); // 0
+```
+
+---
+
+### `getOrHandleErr`
+
+Returns the success value, or applies a handler to the error.
+
+```typescript
+async getOrHandleErr(handler: (error: E) => A): Promise<A>
+```
+
+```typescript
+const value = await IO.fail(new AppError("boom"))
+  .getOrHandleErr(e => fallbackValue(e));
+```
+
+---
+
+## Result Types
+
+```typescript
+interface Ok<A>  { type: "Ok";  value: A }
+interface Err<E> { type: "Err"; error: E }
+interface Cancelled { type: "Cancelled" }
+```
+
+`unsafeRun()` returns `Ok<A> | Err<E>`.
+
+`Fiber.join()` returns `Ok<A> | Err<E> | Cancelled`.
+
+Convenience constructors:
+
+```typescript
+IO.ok(42)          // { type: "Ok", value: 42 }
+IO.err("not found") // { type: "Err", error: "not found" }
+```

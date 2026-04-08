@@ -7,14 +7,14 @@ describe("Either", () => {
       const result = Either.catch(() => {
         throw "Error message";
       });
-      expect(result).toEqual(Left.of("Error message"));
+      expect(result).toEqual(Left.pure("Error message"));
     });
 
     it("should convert thrown Error to Left<string>", () => {
       const result = Either.catch(() => {
         throw Error("Error message");
       });
-      expect(result).toEqual(Left.of("Error message"));
+      expect(result).toEqual(Left.pure("Error message"));
     });
 
     it("should convert thrown Error to Left<MyError>", () => {
@@ -31,55 +31,55 @@ describe("Either", () => {
         (_: unknown): MyError => "EMPTY_NAME"
       );
 
-      expect(result).toEqual(Left.of("EMPTY_NAME"));
+      expect(result).toEqual(Left.pure("EMPTY_NAME"));
     });
   });
 
   describe("map", () => {
     it("should transform the right value of a Right instance", () => {
-      const either: Either<string, number> = Right.of(5);
+      const either: Either<string, number> = Right.pure(5);
       const mapped = either.map((value) => value * 2);
-      expect(mapped).toEqual(Right.of(10));
+      expect(mapped).toEqual(Right.pure(10));
     });
 
     it("should not affect a Left instance", () => {
-      const either: Either<string, number> = Left.of("Error");
+      const either: Either<string, number> = Left.pure("Error");
       const mapped = either.map((value) => value * 2);
-      expect(mapped).toEqual(Left.of("Error"));
+      expect(mapped).toEqual(Left.pure("Error"));
     });
   });
 
   describe("mapLeft", () => {
     it("should transform the left value of a Left instance", () => {
-      const either: Either<number, string> = Left.of(5);
+      const either: Either<number, string> = Left.pure(5);
       const mapped = either.mapLeft((value) => value * 2);
-      expect(mapped).toEqual(Left.of(10));
+      expect(mapped).toEqual(Left.pure(10));
     });
 
     it("should not affect a Right instance", () => {
-      const either: Either<number, string> = Right.of("test");
+      const either: Either<number, string> = Right.pure("test");
       const mapped = either.mapLeft((value) => value * 2);
-      expect(mapped).toEqual(Right.of("test"));
+      expect(mapped).toEqual(Right.pure("test"));
     });
   });
 
   describe("flatMap", () => {
     it("should chain operations for a Right instance", () => {
-      const either: Either<string, number> = Right.of(5);
-      const result = either.flatMap((value) => Right.of(value * 2));
-      expect(result).toEqual(Right.of(10));
+      const either: Either<string, number> = Right.pure(5);
+      const result = either.flatMap((value) => Right.pure(value * 2));
+      expect(result).toEqual(Right.pure(10));
     });
 
     it("should propagate the error for a Left instance", () => {
-      const either: Either<string, number> = Left.of("Error");
-      const result = either.flatMap((value) => Right.of(value * 2));
-      expect(result).toEqual(Left.of("Error"));
+      const either: Either<string, number> = Left.pure("Error");
+      const result = either.flatMap((value) => Right.pure(value * 2));
+      expect(result).toEqual(Left.pure("Error"));
     });
   });
 
   describe("getOrElse", () => {
     it("should return the value contained by the Right instance", () => {
-      const either = Right.of(5);
+      const either = Right.pure(5);
       const result = either.getOrElse(() => 0);
       expect(result).toBe(5);
     });
@@ -95,13 +95,13 @@ describe("Either", () => {
 
   describe("getOrNull", () => {
     it("should return the value contained by the Right instance", () => {
-      const either = Right.of(5);
+      const either = Right.pure(5);
       const result = either.getOrNull();
       expect(result).toBe(5);
     });
 
     it("should return null if Left instance", () => {
-      const either = Left.of("Error");
+      const either = Left.pure("Error");
       const result = either.getOrNull();
       expect(result).toBeNull();
     });
@@ -109,7 +109,7 @@ describe("Either", () => {
 
   describe("fold", () => {
     it("should execute the right function for a Right instance", () => {
-      const either: Either<string, number> = Right.of(5);
+      const either: Either<string, number> = Right.pure(5);
       const result = either.fold(
         (error) => `Error occurred: ${error}`,
         (value) => `Success with ${value}`
@@ -118,7 +118,7 @@ describe("Either", () => {
     });
 
     it("should execute the left function for a Left instance", () => {
-      const either: Either<string, number> = Left.of("Error");
+      const either: Either<string, number> = Left.pure("Error");
       const result = either.fold(
         (error) => `Error occurred: ${error}`,
         (value) => `Success with ${value}`
@@ -129,57 +129,57 @@ describe("Either", () => {
 
   describe("swap", () => {
     it("should swap the right to the left value", () => {
-      const either = Right.of(5).swap();
-      expect(either).toEqual(Left.of(5));
+      const either = Right.pure(5).swap();
+      expect(either).toEqual(Left.pure(5));
     });
 
     it("should swap the left to the right value", () => {
-      const either = Left.of("Error").swap();
-      expect(either).toEqual(Right.of("Error"));
+      const either = Left.pure("Error").swap();
+      expect(either).toEqual(Right.pure("Error"));
     });
   });
 
   describe("tapLeft", () => {
     it("should execute the action for a Left instance", () => {
       let errorMessage = "";
-      const either: Either<string, number> = Left.of("Error");
+      const either: Either<string, number> = Left.pure("Error");
       const result = either.tapLeft((error) => {
         errorMessage = error;
       });
       expect(errorMessage).toBe("Error");
-      expect(result).toEqual(Left.of("Error"));
+      expect(result).toEqual(Left.pure("Error"));
     });
 
     it("should not execute the action for a Right instance", () => {
       let errorMessage = "";
-      const either: Either<string, number> = Right.of(5);
+      const either: Either<string, number> = Right.pure(5);
       const result = either.tapLeft((error) => {
         errorMessage = error;
       });
       expect(errorMessage).toBe("");
-      expect(result).toEqual(Right.of(5));
+      expect(result).toEqual(Right.pure(5));
     });
   });
 
   describe("tap", () => {
     it("should execute the action for a Right instance", () => {
       let successMessage = "";
-      const either: Either<string, number> = Right.of(5);
+      const either: Either<string, number> = Right.pure(5);
       const result = either.tap((value) => {
         successMessage = `Success with ${value}`;
       });
       expect(successMessage).toBe("Success with 5");
-      expect(result).toEqual(Right.of(5));
+      expect(result).toEqual(Right.pure(5));
     });
 
     it("should not execute the action for a Left instance", () => {
       let successMessage = "";
-      const either: Either<string, number> = Left.of("Error");
+      const either: Either<string, number> = Left.pure("Error");
       const result = either.tap((value) => {
         successMessage = `Success with ${value}`;
       });
       expect(successMessage).toBe("");
-      expect(result).toEqual(Left.of("Error"));
+      expect(result).toEqual(Left.pure("Error"));
     });
   });
 });

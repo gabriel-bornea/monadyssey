@@ -6,59 +6,59 @@ describe("Either simulation", () => {
     html("Either");
   });
 
-  it("Right.of", () => {
-    perf("Right.of", () => Right.of(42));
+  it("Right.pure", () => {
+    perf("Right.pure", () => Right.pure(42));
   });
 
   it("Right.map", () => {
-    perf("map", () => Right.of(41).map((num) => num + 1));
+    perf("map", () => Right.pure(41).map((num) => num + 1));
   });
 
   it("Right.mapLeft", () => {
-    perf("mapLeft", () => Right.of(41).mapLeft((num) => num * 2));
+    perf("mapLeft", () => Right.pure(41).mapLeft((num) => num * 2));
   });
 
   it("Right.flatMap with Right", () => {
-    perf("flatMap with Right", () => Right.of(50).flatMap((n) => Right.of(n + 50)));
+    perf("flatMap with Right", () => Right.pure(50).flatMap((n) => Right.pure(n + 50)));
   });
 
   it("Right.flatMap with Left", () => {
-    perf("flatMap with Left", () => Right.of(50).flatMap((n) => Left.of(n + 50)));
+    perf("flatMap with Left", () => Right.pure(50).flatMap((n) => Left.pure(n + 50)));
   });
 
   it("Right.tap", () => {
-    perf("tap", () => Right.of(41).tap((num) => num + 1));
+    perf("tap", () => Right.pure(41).tap((num) => num + 1));
   });
 
   it("Right.tapLeft", () => {
-    perf("tapLeft", () => Right.of(41).tapLeft((num) => num * 2));
+    perf("tapLeft", () => Right.pure(41).tapLeft((num) => num * 2));
   });
 
-  it("Left.of", () => {
-    perf("Left.of", () => Left.of(42));
+  it("Left.pure", () => {
+    perf("Left.pure", () => Left.pure(42));
   });
 
   it("Left.map", () => {
-    perf("map", () => Left.of(41).map((num) => num + 1));
+    perf("map", () => Left.pure(41).map((num) => num + 1));
   });
 
   it("Left.mapLeft", () => {
-    perf("mapLeft", () => (Left.of(41) as Either<number, string>).mapLeft((num) => num * 2));
+    perf("mapLeft", () => (Left.pure(41) as Either<number, string>).mapLeft((num) => num * 2));
   });
 
   it("Left.flatMap with Right", () => {
-    perf("flatMap with Right", () => Left.of(50).flatMap((n) => Right.of(n + 50)));
+    perf("flatMap with Right", () => Left.pure(50).flatMap((n) => Right.pure(n + 50)));
   });
 
   it("Left.flatMap with Left", () => {
-    perf("flatMap with Left", () => Left.of(50).flatMap((n) => Left.of(n + 50)));
+    perf("flatMap with Left", () => Left.pure(50).flatMap((n) => Left.pure(n + 50)));
   });
 
   it("Left.tap", () => {
-    perf("tap", () => Left.of(41).tap((num) => num + 1));
+    perf("tap", () => Left.pure(41).tap((num) => num + 1));
   });
 
   it("Left.tapLeft", () => {
-    perf("tapLeft", () => Left.of(41).tapLeft((num) => num * 2));
+    perf("tapLeft", () => Left.pure(41).tapLeft((num) => num * 2));
   });
 });

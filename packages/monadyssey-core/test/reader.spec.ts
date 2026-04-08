@@ -41,22 +41,22 @@ describe("Reader", () => {
     });
   });
 
-  describe("of", () => {
+  describe("pure", () => {
     it("it should create a new Reader ignoring the environment", () => {
-      const reader = Reader.of(42);
+      const reader = Reader.pure(42);
       expect(reader.run("env")).toBe(42);
     });
   });
 
   describe("map", () => {
     it("should transform the result by applying the provided function", () => {
-      const reader = Reader.of(42);
+      const reader = Reader.pure(42);
       const result = reader.map((x) => x * 2);
       expect(result.run("env")).toBe(84);
     });
 
     it("should propagate the error occurred during transformation", () => {
-      const reader = Reader.of(42);
+      const reader = Reader.pure(42);
       const result = reader.map((_) => {
         throw new Error("Error occurred");
       });
@@ -66,8 +66,8 @@ describe("Reader", () => {
 
   describe("flatMap", () => {
     it("should chain multiple readers together", () => {
-      const reader1 = Reader.of(2);
-      const reader2 = (num: number) => Reader.of(num * 3);
+      const reader1 = Reader.pure(2);
+      const reader2 = (num: number) => Reader.pure(num * 3);
       const result = reader1.flatMap((x) => reader2(x));
       expect(result.run("env")).toBe(6);
     });
@@ -83,7 +83,7 @@ describe("Reader", () => {
   describe("lift", () => {
     it("should lift a function into the Reader context, allowing it to be applied to the result", () => {
       const addOne = (x: number) => x + 1;
-      const reader = Reader.of(42);
+      const reader = Reader.pure(42);
       const result = Reader.lift(addOne)(reader);
       expect(result.run("env")).toBe(43);
     });
@@ -91,9 +91,9 @@ describe("Reader", () => {
 
   describe("parZip", () => {
     it("should combines multiple instances into a single Reader", () => {
-      const reader1 = Reader.of(1);
-      const reader2 = Reader.of(2);
-      const reader3 = Reader.of(3);
+      const reader1 = Reader.pure(1);
+      const reader2 = Reader.pure(2);
+      const reader3 = Reader.pure(3);
       const result = Reader.parZip(reader1, reader2, reader3);
       expect(result.run("env")).toEqual([1, 2, 3]);
     });
