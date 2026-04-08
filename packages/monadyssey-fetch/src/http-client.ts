@@ -211,7 +211,7 @@ export class HttpError extends Error {
 }
 
 const request = <A = any>(uri: string, method: Method, options: Options<A> = {}): IO<HttpError, Response | A> =>
-  IO.forM(async (bind: <A>(io: IO<HttpError, A>) => Promise<A>) => {
+  IO.Do(async (bind: <A>(io: IO<HttpError, A>) => Promise<A>) => {
     const {
       headers = {},
       body,
@@ -240,13 +240,13 @@ const request = <A = any>(uri: string, method: Method, options: Options<A> = {})
     };
 
     const response = await bind(
-      IO.of(() => runInterceptors(request, (req) => fetch(uri, req))).mapError((e: unknown) => toHttpError(e, uri))
+      IO.lift(() => runInterceptors(request, (req) => fetch(uri, req))).mapErr((e: unknown) => toHttpError(e, uri))
     );
 
     if (!response.ok) {
       const rb = await bind(parse(response, responseType, uri));
       const headers = extractHeadersFrom(response);
-      return await bind(IO.failed(new HttpError(response.status, response.statusText, rb, uri, headers)));
+      return await bind(IO.fail(new HttpError(response.status, response.statusText, rb, uri, headers)));
     }
 
     if (observe === "response") {
@@ -280,7 +280,7 @@ const runInterceptors = async (req: RequestInit, fn: (req: RequestInit) => Promi
 };
 
 const parse = (response: Response, responseType: ResponseType, url: string): IO<HttpError, any> =>
-  IO.of(async () => {
+  IO.lift(async () => {
     if (response.status === 204 || response.status === 205) {
       return null;
     }

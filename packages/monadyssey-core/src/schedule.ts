@@ -106,7 +106,7 @@ export class Schedule {
    */
   retryIf<E, A>(eff: IO<E, A>, condition: (error: E) => boolean, liftE: (error: Error) => E): IO<E, A> {
     const policy = this.policy;
-    return IO.of<E, A>(async () => {
+    return IO.lift<E, A>(async () => {
       let attempt = 0;
       let delay = policy.delay;
       let timeoutId: NodeJS.Timeout | null = null;
@@ -119,8 +119,8 @@ export class Schedule {
           return Promise.reject(liftE(new CancellationError("Operation was cancelled")));
         }
 
-        const result = await this.withTimeout(eff, liftE).runAsync();
-        if (IO.isOk(result)) {
+        const result = await this.withTimeout(eff, liftE).unsafeRun();
+        if (result.type === "Ok") {
           return result.value;
         }
         const error = result.error;
@@ -165,7 +165,7 @@ export class Schedule {
     const policy = this.policy;
     let timeoutId: NodeJS.Timeout | null = null;
 
-    return IO.of(async () => {
+    return IO.lift(async () => {
       let lastSuccessResult: A | null = null;
 
       for (let attempt = 0; attempt < policy.recurs; attempt++) {
@@ -176,9 +176,9 @@ export class Schedule {
           return Promise.reject(liftE(new CancellationError("Operation was cancelled")));
         }
 
-        const result = await this.withTimeout(eff, liftE).runAsync();
+        const result = await this.withTimeout(eff, liftE).unsafeRun();
 
-        if (IO.isOk(result)) {
+        if (result.type === "Ok") {
           lastSuccessResult = result.value;
 
           if (attempt < policy.recurs - 1) {
@@ -220,7 +220,7 @@ export class Schedule {
       return eff;
     }
 
-    return IO.of<E, A>(async () => {
+    return IO.lift<E, A>(async () => {
       let timeoutId: NodeJS.Timeout | null = null;
 
       const timeoutP = new Promise<A>((_, reject) => {
@@ -229,7 +229,7 @@ export class Schedule {
         }, timeout);
       });
 
-      const opP = eff.runAsync().then((result) => {
+      const opP = eff.unsafeRun().then((result) => {
         switch (result.type) {
           case "Ok":
             return result.value;
@@ -255,7 +255,7 @@ export class Schedule {
    *
    * @example
    * const schedule = new Schedule();
-   * const operation = () => IO.ofSync(() => performOperation());
+   * const operation = () => IO.lift(() => performOperation());
    * const retryCondition = () => true;
    * const errorLifter = (error: Error) => new CustomError(error.message);
    *
@@ -265,7 +265,7 @@ export class Schedule {
    *   schedule.cancel();
    * }, 150);
    *
-   * const result = await retryIO.runAsync();
+   * const result = await retryIO.unsafeRun();
    */
   cancel(): void {
     this.cancelled = true;

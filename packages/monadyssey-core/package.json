@@ -39,5 +39,9 @@
     "lint:fix": "npm run lint -- --fix",
     "prettier": "npx prettier \"src/**/*.{ts,tsx}\" \"test/**/*.{ts,tsx}\" --check",
     "prettier:fix": "npm run prettier -- --write"
+  },
+  "devDependencies": {
+    "@swc/core": "^1.15.24",
+    "@swc/jest": "^0.2.39"
   }
 }

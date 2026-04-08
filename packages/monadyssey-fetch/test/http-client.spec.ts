@@ -32,7 +32,7 @@ describe("HttpClient", () => {
       const item = { id: 1, name: "Test Item" };
       (global.fetch as jest.Mock).mockResolvedValue(ok(item));
 
-      const eff = await HttpClient.get<typeof item>("https://api.example.com/items").runAsync();
+      const eff = await HttpClient.get<typeof item>("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<typeof item>;
@@ -50,7 +50,7 @@ describe("HttpClient", () => {
       const error = { code: "INVALID_REQUEST", message: "Invalid request" };
       (global.fetch as jest.Mock).mockResolvedValue(badRequest(error));
 
-      const eff = await HttpClient.get("https://api.example.com/items").runAsync();
+      const eff = await HttpClient.get("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -62,7 +62,7 @@ describe("HttpClient", () => {
     it("should handle network errors gracefully", async () => {
       (fetch as jest.Mock).mockRejectedValue(new Error("Network Error"));
 
-      const eff = await HttpClient.get("https://api.example.com/items").runAsync();
+      const eff = await HttpClient.get("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = eff as Err<HttpError>;
@@ -76,7 +76,7 @@ describe("HttpClient", () => {
       (global.fetch as jest.Mock).mockResolvedValue(ok(item));
 
       const headers = { Authorization: "Bearer token" };
-      await HttpClient.get<typeof item>("https://api.example.com/items", { headers }).runAsync();
+      await HttpClient.get<typeof item>("https://api.example.com/items", { headers }).unsafeRun();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
         method: "GET",
@@ -89,7 +89,7 @@ describe("HttpClient", () => {
     it("should handle non-JSON response", async () => {
       (global.fetch as jest.Mock).mockResolvedValue(textResponse("Plain text response"));
 
-      const eff = await HttpClient.get<string>("https://api.example.com/items", { responseType: "text" }).runAsync();
+      const eff = await HttpClient.get<string>("https://api.example.com/items", { responseType: "text" }).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<string>;
@@ -100,7 +100,7 @@ describe("HttpClient", () => {
       const item = { id: 1, name: "Test Item" };
       (global.fetch as jest.Mock).mockResolvedValue(ok(item));
 
-      const eff = await HttpClient.get("https://api.example.com/items", { observe: "response" }).runAsync();
+      const eff = await HttpClient.get("https://api.example.com/items", { observe: "response" }).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<Response>;
@@ -113,7 +113,7 @@ describe("HttpClient", () => {
         new Response(null, { status: 204, headers: { "Content-Type": "application/json" } })
       );
 
-      const eff = await HttpClient.get("https://api.example.com/items").runAsync();
+      const eff = await HttpClient.get("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<null>;
@@ -125,7 +125,7 @@ describe("HttpClient", () => {
         new Response("Invalid JSON", { status: 200, headers: { "Content-Type": "application/json" } })
       );
 
-      const eff = await HttpClient.get("https://api.example.com/items").runAsync();
+      const eff = await HttpClient.get("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -139,7 +139,7 @@ describe("HttpClient", () => {
         () => new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 1000))
       );
 
-      const eff = await HttpClient.get("https://api.example.com/items").runAsync();
+      const eff = await HttpClient.get("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -155,7 +155,7 @@ describe("HttpClient", () => {
 
       (global.fetch as jest.Mock).mockResolvedValue(badRequest(error));
 
-      const eff = await HttpClient.get("https://api.example.com/register").runAsync();
+      const eff = await HttpClient.get("https://api.example.com/register").unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -180,7 +180,7 @@ describe("HttpClient", () => {
         json: jest.fn().mockRejectedValue(new SyntaxError("Unexpected token I in JSON")),
       });
 
-      const eff = await HttpClient.get("https://api.example.com/items").runAsync();
+      const eff = await HttpClient.get("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const error = eff as Err<HttpError>;
@@ -218,7 +218,7 @@ describe("HttpClient", () => {
         json: jest.fn().mockResolvedValue(errorBody),
       });
 
-      const eff = await HttpClient.get("https://api.example.com/items").runAsync();
+      const eff = await HttpClient.get("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const error = eff as Err<HttpError>;
@@ -247,7 +247,7 @@ describe("HttpClient", () => {
       const item = { id: 1, name: "New Item" };
       (global.fetch as jest.Mock).mockResolvedValue(ok(item));
 
-      const eff = await HttpClient.post<typeof item>("https://api.example.com/items", { name: "New Item" }).runAsync();
+      const eff = await HttpClient.post<typeof item>("https://api.example.com/items", { name: "New Item" }).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<typeof item>;
@@ -266,7 +266,7 @@ describe("HttpClient", () => {
       const error = { code: "INVALID_REQUEST", message: "Invalid request" };
       (global.fetch as jest.Mock).mockResolvedValue(badRequest(error));
 
-      const eff = await HttpClient.post("https://api.example.com/items", { name: "New Item" }).runAsync();
+      const eff = await HttpClient.post("https://api.example.com/items", { name: "New Item" }).unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -278,7 +278,7 @@ describe("HttpClient", () => {
     it("should handle network errors gracefully", async () => {
       (global.fetch as jest.Mock).mockRejectedValue(new Error("Network Error"));
 
-      const eff = await HttpClient.post("https://api.example.com/items", { name: "New Item" }).runAsync();
+      const eff = await HttpClient.post("https://api.example.com/items", { name: "New Item" }).unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -292,7 +292,11 @@ describe("HttpClient", () => {
       (global.fetch as jest.Mock).mockResolvedValue(ok(item));
 
       const headers = { Authorization: "Bearer token" };
-      await HttpClient.post<typeof item>("https://api.example.com/items", { name: "New Item" }, { headers }).runAsync();
+      await HttpClient.post<typeof item>(
+        "https://api.example.com/items",
+        { name: "New Item" },
+        { headers }
+      ).unsafeRun();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
         method: "POST",
@@ -312,7 +316,7 @@ describe("HttpClient", () => {
         "https://api.example.com/items",
         { name: "New Item" },
         { responseType: "text" }
-      ).runAsync();
+      ).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<string>;
@@ -327,7 +331,7 @@ describe("HttpClient", () => {
         "https://api.example.com/items",
         { name: "New Item" },
         { observe: "response" }
-      ).runAsync();
+      ).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<Response>;
@@ -338,7 +342,7 @@ describe("HttpClient", () => {
     it("should handle empty response body (204 No Content)", async () => {
       (global.fetch as jest.Mock).mockResolvedValue(new Response(null, { status: 204 }));
 
-      const eff = await HttpClient.post("https://api.example.com/items").runAsync();
+      const eff = await HttpClient.post("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<null>;
@@ -350,7 +354,7 @@ describe("HttpClient", () => {
         new Response("Invalid JSON", { status: 200, headers: { "Content-Type": "application/json" } })
       );
 
-      const eff = await HttpClient.post("https://api.example.com/items").runAsync();
+      const eff = await HttpClient.post("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -365,7 +369,7 @@ describe("HttpClient", () => {
 
       await HttpClient.post("https://api.example.com/items", formData, {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      }).runAsync();
+      }).unsafeRun();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
         method: "POST",
@@ -383,7 +387,7 @@ describe("HttpClient", () => {
 
       const eff = await HttpClient.put<typeof item>("https://api.example.com/items/1", {
         name: "Updated Item",
-      }).runAsync();
+      }).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<typeof item>;
@@ -400,7 +404,7 @@ describe("HttpClient", () => {
       const error = { code: "INVALID_REQUEST", message: "Invalid request" };
       (global.fetch as jest.Mock).mockResolvedValue(badRequest(error));
 
-      const eff = await HttpClient.put("https://api.example.com/items/1", { name: "Invalid Item" }).runAsync();
+      const eff = await HttpClient.put("https://api.example.com/items/1", { name: "Invalid Item" }).unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -412,7 +416,7 @@ describe("HttpClient", () => {
     it("should handle network errors gracefully", async () => {
       (global.fetch as jest.Mock).mockRejectedValue(new Error("Network Error"));
 
-      const eff = await HttpClient.put("https://api.example.com/items/1", { name: "Updated Item" }).runAsync();
+      const eff = await HttpClient.put("https://api.example.com/items/1", { name: "Updated Item" }).unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -430,7 +434,7 @@ describe("HttpClient", () => {
         "https://api.example.com/items/1",
         { name: "Updated Item" },
         { headers }
-      ).runAsync();
+      ).unsafeRun();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
         method: "PUT",
@@ -450,7 +454,7 @@ describe("HttpClient", () => {
         "https://api.example.com/items/1",
         { name: "Updated Item" },
         { responseType: "text" }
-      ).runAsync();
+      ).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<string>;
@@ -465,7 +469,7 @@ describe("HttpClient", () => {
         "https://api.example.com/items/1",
         { name: "Updated Item" },
         { observe: "response" }
-      ).runAsync();
+      ).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<Response>;
@@ -476,7 +480,7 @@ describe("HttpClient", () => {
     it("should handle empty response body (204 No Content)", async () => {
       (global.fetch as jest.Mock).mockResolvedValue(new Response(null, { status: 204 }));
 
-      const eff = await HttpClient.put("https://api.example.com/items/1").runAsync();
+      const eff = await HttpClient.put("https://api.example.com/items/1").unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<null>;
@@ -488,7 +492,7 @@ describe("HttpClient", () => {
         new Response("Invalid JSON", { status: 200, headers: { "Content-Type": "application/json" } })
       );
 
-      const eff = await HttpClient.put("https://api.example.com/items/1", { name: "Updated Item" }).runAsync();
+      const eff = await HttpClient.put("https://api.example.com/items/1", { name: "Updated Item" }).unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -505,7 +509,7 @@ describe("HttpClient", () => {
 
       const eff = await HttpClient.patch<typeof item>("https://api.example.com/items/1", {
         name: "Updated Item",
-      }).runAsync();
+      }).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<typeof item>;
@@ -522,7 +526,7 @@ describe("HttpClient", () => {
       const error = { code: "INVALID_REQUEST", message: "Invalid request" };
       (global.fetch as jest.Mock).mockResolvedValue(badRequest(error));
 
-      const eff = await HttpClient.patch("https://api.example.com/items/1", { name: "Invalid Item" }).runAsync();
+      const eff = await HttpClient.patch("https://api.example.com/items/1", { name: "Invalid Item" }).unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -534,7 +538,7 @@ describe("HttpClient", () => {
     it("should handle network errors gracefully", async () => {
       (global.fetch as jest.Mock).mockRejectedValue(new Error("Network Error"));
 
-      const eff = await HttpClient.patch("https://api.example.com/items/1", { name: "Updated Item" }).runAsync();
+      const eff = await HttpClient.patch("https://api.example.com/items/1", { name: "Updated Item" }).unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -552,7 +556,7 @@ describe("HttpClient", () => {
         "https://api.example.com/items/1",
         { name: "Updated Item" },
         { headers }
-      ).runAsync();
+      ).unsafeRun();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
         method: "PATCH",
@@ -572,7 +576,7 @@ describe("HttpClient", () => {
         "https://api.example.com/items/1",
         { name: "Updated Item" },
         { responseType: "text" }
-      ).runAsync();
+      ).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<string>;
@@ -587,7 +591,7 @@ describe("HttpClient", () => {
         "https://api.example.com/items/1",
         { name: "Updated Item" },
         { observe: "response" }
-      ).runAsync();
+      ).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<Response>;
@@ -598,7 +602,7 @@ describe("HttpClient", () => {
     it("should handle empty response body (204 No Content)", async () => {
       (global.fetch as jest.Mock).mockResolvedValue(new Response(null, { status: 204 }));
 
-      const eff = await HttpClient.patch("https://api.example.com/items/1").runAsync();
+      const eff = await HttpClient.patch("https://api.example.com/items/1").unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<null>;
@@ -610,7 +614,7 @@ describe("HttpClient", () => {
         new Response("Invalid JSON", { status: 200, headers: { "Content-Type": "application/json" } })
       );
 
-      const eff = await HttpClient.patch("https://api.example.com/items/1", { name: "Updated Item" }).runAsync();
+      const eff = await HttpClient.patch("https://api.example.com/items/1", { name: "Updated Item" }).unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -625,7 +629,7 @@ describe("HttpClient", () => {
       const item = { id: 1, name: "Deleted Item" };
       (global.fetch as jest.Mock).mockResolvedValue(ok(item));
 
-      const eff = await HttpClient.delete<typeof item>("https://api.example.com/items/1").runAsync();
+      const eff = await HttpClient.delete<typeof item>("https://api.example.com/items/1").unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<typeof item>;
@@ -642,7 +646,7 @@ describe("HttpClient", () => {
       const error = { code: "INVALID_REQUEST", message: "Invalid request" };
       (global.fetch as jest.Mock).mockResolvedValue(badRequest(error));
 
-      const eff = await HttpClient.delete("https://api.example.com/items/1").runAsync();
+      const eff = await HttpClient.delete("https://api.example.com/items/1").unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -654,7 +658,7 @@ describe("HttpClient", () => {
     it("should handle network errors gracefully", async () => {
       (global.fetch as jest.Mock).mockRejectedValue(new Error("Network Error"));
 
-      const eff = await HttpClient.delete("https://api.example.com/items/1").runAsync();
+      const eff = await HttpClient.delete("https://api.example.com/items/1").unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -668,7 +672,7 @@ describe("HttpClient", () => {
       (global.fetch as jest.Mock).mockResolvedValue(ok(item));
 
       const headers = { Authorization: "Bearer token" };
-      await HttpClient.delete<typeof item>("https://api.example.com/items/1", { headers }).runAsync();
+      await HttpClient.delete<typeof item>("https://api.example.com/items/1", { headers }).unsafeRun();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
         method: "DELETE",
@@ -685,7 +689,7 @@ describe("HttpClient", () => {
 
       const eff = await HttpClient.delete<string>("https://api.example.com/items/1", {
         responseType: "text",
-      }).runAsync();
+      }).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<string>;
@@ -696,7 +700,7 @@ describe("HttpClient", () => {
       const item = { id: 1, name: "Deleted Item" };
       (global.fetch as jest.Mock).mockResolvedValue(ok(item));
 
-      const eff = await HttpClient.delete("https://api.example.com/items/1", { observe: "response" }).runAsync();
+      const eff = await HttpClient.delete("https://api.example.com/items/1", { observe: "response" }).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<Response>;
@@ -707,7 +711,7 @@ describe("HttpClient", () => {
     it("should handle empty response body (204 No Content)", async () => {
       (global.fetch as jest.Mock).mockResolvedValue(new Response(null, { status: 204 }));
 
-      const eff = await HttpClient.delete("https://api.example.com/items/1").runAsync();
+      const eff = await HttpClient.delete("https://api.example.com/items/1").unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<null>;
@@ -719,7 +723,7 @@ describe("HttpClient", () => {
         new Response("Invalid JSON", { status: 200, headers: { "Content-Type": "application/json" } })
       );
 
-      const eff = await HttpClient.delete("https://api.example.com/items/1").runAsync();
+      const eff = await HttpClient.delete("https://api.example.com/items/1").unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -733,7 +737,7 @@ describe("HttpClient", () => {
     it("should make a successful custom HTTP request (HEAD) and return the full response", async () => {
       (global.fetch as jest.Mock).mockResolvedValue(new Response(null, { status: 200 }));
 
-      const eff = await HttpClient.fetch("https://api.example.com/items", "HEAD", { observe: "response" }).runAsync();
+      const eff = await HttpClient.fetch("https://api.example.com/items", "HEAD", { observe: "response" }).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<Response>;
@@ -751,7 +755,10 @@ describe("HttpClient", () => {
       const optionsResponse = { allowedMethods: ["GET", "POST"] };
       (global.fetch as jest.Mock).mockResolvedValue(ok(optionsResponse));
 
-      const eff = await HttpClient.fetch<typeof optionsResponse>("https://api.example.com/items", "OPTIONS").runAsync();
+      const eff = await HttpClient.fetch<typeof optionsResponse>(
+        "https://api.example.com/items",
+        "OPTIONS"
+      ).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<typeof optionsResponse>;
@@ -770,7 +777,7 @@ describe("HttpClient", () => {
 
       const eff = await HttpClient.fetch("https://api.example.com/items", "PATCH", {
         headers: { "Custom-Header": "value" },
-      }).runAsync();
+      }).unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -782,7 +789,7 @@ describe("HttpClient", () => {
     it("should handle network errors gracefully for a custom HTTP method (PUT)", async () => {
       (global.fetch as jest.Mock).mockRejectedValue(new Error("Network Error"));
 
-      const eff = await HttpClient.fetch("https://api.example.com/items", "PUT").runAsync();
+      const eff = await HttpClient.fetch("https://api.example.com/items", "PUT").unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -798,7 +805,7 @@ describe("HttpClient", () => {
       await HttpClient.fetch<typeof item>("https://api.example.com/items", "POST", {
         headers: { "Authorization": "Bearer token", "Content-Type": "application/json" },
         body: { name: "Custom Request" },
-      }).runAsync();
+      }).unsafeRun();
 
       expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
         method: "POST",
@@ -816,7 +823,7 @@ describe("HttpClient", () => {
 
       const eff = await HttpClient.fetch<string>("https://api.example.com/items", "GET", {
         responseType: "text",
-      }).runAsync();
+      }).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<string>;
@@ -837,7 +844,7 @@ describe("HttpClient", () => {
 
       const eff = await HttpClient.fetch<typeof data>("https://api.example.com/items", "GET", {
         responseType: "json",
-      }).runAsync();
+      }).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<typeof data>;
@@ -850,7 +857,7 @@ describe("HttpClient", () => {
 
       const eff = await HttpClient.fetch<string>("https://api.example.com/items", "GET", {
         responseType: "text",
-      }).runAsync();
+      }).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<string>;
@@ -863,7 +870,7 @@ describe("HttpClient", () => {
 
       const eff = await HttpClient.fetch<Blob>("https://api.example.com/items", "GET", {
         responseType: "blob",
-      }).runAsync();
+      }).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<Blob>;
@@ -878,7 +885,7 @@ describe("HttpClient", () => {
 
       const eff = await HttpClient.fetch<ArrayBuffer>("https://api.example.com/items", "GET", {
         responseType: "arrayBuffer",
-      }).runAsync();
+      }).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<ArrayBuffer>;
@@ -893,7 +900,7 @@ describe("HttpClient", () => {
 
       const eff = await HttpClient.fetch<FormData>("https://api.example.com/items", "GET", {
         responseType: "formData",
-      }).runAsync();
+      }).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<FormData>;
@@ -906,7 +913,7 @@ describe("HttpClient", () => {
 
       const eff = await HttpClient.fetch("https://api.example.com/items", "GET", {
         responseType: "unsupported" as any,
-      }).runAsync();
+      }).unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -921,7 +928,7 @@ describe("HttpClient", () => {
         mockResponse("Invalid JSON", { headers: { "Content-Type": "application/json" } })
       );
 
-      const eff = await HttpClient.fetch("https://api.example.com/items", "GET", { responseType: "json" }).runAsync();
+      const eff = await HttpClient.fetch("https://api.example.com/items", "GET", { responseType: "json" }).unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -942,7 +949,7 @@ describe("HttpClient", () => {
       const data: Data = { id: 1, name: "John" };
       (global.fetch as jest.Mock).mockResolvedValue(ok(data));
 
-      const eff = await HttpClient.get<Data>("https://api.example.com/default").runAsync();
+      const eff = await HttpClient.get<Data>("https://api.example.com/default").unsafeRun();
 
       expect(eff.type).toBe("Ok");
       if (eff.type === "Ok") {
@@ -955,7 +962,7 @@ describe("HttpClient", () => {
       const data = { id: 2 };
       (global.fetch as jest.Mock).mockResolvedValue(ok(data));
 
-      const eff = await HttpClient.get("https://api.example.com/body", { observe: "body" }).runAsync();
+      const eff = await HttpClient.get("https://api.example.com/body", { observe: "body" }).unsafeRun();
 
       expect(eff.type).toBe("Ok");
       if (eff.type === "Ok") {
@@ -968,7 +975,7 @@ describe("HttpClient", () => {
       const data = { id: 3 };
       (global.fetch as jest.Mock).mockResolvedValue(ok(data));
 
-      const eff = await HttpClient.get("https://api.example.com/response", { observe: "response" }).runAsync();
+      const eff = await HttpClient.get("https://api.example.com/response", { observe: "response" }).unsafeRun();
 
       expect(eff.type).toBe("Ok");
       if (eff.type === "Ok") {
@@ -1004,7 +1011,7 @@ describe("HttpClient", () => {
 
       (global.fetch as jest.Mock).mockResolvedValue(ok({ success: true }));
 
-      const eff = await HttpClient.get("https://api.example.com/test").runAsync();
+      const eff = await HttpClient.get("https://api.example.com/test").unsafeRun();
       expect(eff.type).toBe("Ok");
 
       expect(global.fetch).toHaveBeenCalledTimes(1);
@@ -1040,7 +1047,7 @@ describe("HttpClient", () => {
 
       HttpClient.addInterceptor(interceptor);
 
-      const eff = await HttpClient.get("https://api.example.com/shortcircuit").runAsync();
+      const eff = await HttpClient.get("https://api.example.com/shortcircuit").unsafeRun();
       expect(eff.type).toBe("Ok");
 
       const result = eff as Ok<any>;
@@ -1078,7 +1085,7 @@ describe("HttpClient", () => {
 
       fetch.mockResolvedValue(ok({ success: true }));
 
-      const eff = await HttpClient.get("https://api.example.com/test").runAsync();
+      const eff = await HttpClient.get("https://api.example.com/test").unsafeRun();
       expect(eff.type).toBe("Ok");
 
       expect(fetch).toHaveBeenCalledTimes(1);
@@ -1124,7 +1131,7 @@ describe("HttpClient", () => {
         .mockRejectedValueOnce(new Error("Network Error"))
         .mockResolvedValueOnce(ok({ success: true }));
 
-      const eff = await HttpClient.get("https://api.example.com/retry").runAsync();
+      const eff = await HttpClient.get("https://api.example.com/retry").unsafeRun();
       expect(eff.type).toBe("Ok");
 
       const result = eff as Ok<any>;
@@ -1155,7 +1162,7 @@ describe("HttpClient", () => {
 
       (global.fetch as jest.Mock).mockResolvedValue(ok({ name: "Original" }));
 
-      const eff = await HttpClient.get<any>("https://api.example.com/transform").runAsync();
+      const eff = await HttpClient.get<any>("https://api.example.com/transform").unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<any>;
@@ -1187,7 +1194,7 @@ describe("HttpClient", () => {
 
       (global.fetch as jest.Mock).mockRejectedValue(new Error("Network Error"));
 
-      const eff = await HttpClient.get<any>("https://api.example.com/override").runAsync();
+      const eff = await HttpClient.get<any>("https://api.example.com/override").unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<any>;
@@ -1218,7 +1225,7 @@ describe("HttpClient", () => {
       const fetch = global.fetch as jest.Mock;
       fetch.mockResolvedValue(ok({ success: true }));
 
-      const eff = await HttpClient.get<body>("https://api.example.com/test").runAsync();
+      const eff = await HttpClient.get<body>("https://api.example.com/test").unsafeRun();
       expect(eff.type).toBe("Ok");
 
       expect(fetch).toHaveBeenCalledTimes(1);
@@ -1239,7 +1246,7 @@ describe("HttpClient", () => {
     class SelfNestingInterceptor implements HttpInterceptor {
       async intercept(req: RequestInit, next: (req: RequestInit) => Promise<Response>): Promise<Response> {
         callCount++;
-        await HttpClient.get("https://api.example.com/nested").runAsync();
+        await HttpClient.get("https://api.example.com/nested").unsafeRun();
         return next(req);
       }
     }
@@ -1265,7 +1272,7 @@ describe("HttpClient", () => {
     });
 
     it("should call the interceptor only once per outer request even with nested calls", async () => {
-      const result = await HttpClient.get("https://api.example.com/test").runAsync();
+      const result = await HttpClient.get("https://api.example.com/test").unsafeRun();
       expect(result.type).toBe("Ok");
       expect(callCount).toBe(1);
       expect((global.fetch as jest.Mock).mock.calls.length).toBe(2);

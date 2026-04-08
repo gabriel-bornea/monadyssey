@@ -1,1168 +1,1086 @@
 import { NonEmptyList } from "./non-empty-list";
+// Circular dependency: schedule.ts imports IO from this module.
+// Safe because both modules only reference each other's exports at runtime (inside methods),
+// never at import/evaluation time. Do not add top-level code that uses Schedule eagerly.
 import { defaultPolicy, Policy, Schedule } from "./schedule";
 
-/**
- * Represents a successful outcome of an operation.
- *
- * @template A The type of the value encapsulated by this successful outcome.
- */
 export interface Ok<A> {
-  /**
-   * Discriminator property for type narrowing. Always "Ok" for instances of Ok.
-   */
   type: "Ok";
-
-  /**
-   * The value resulting from a successful operation.
-   */
   value: A;
 }
 
-/**
- * Represents a failed outcome of an operation.
- *
- * @template E The type of the error encapsulated by this failed outcome.
- */
 export interface Err<E> {
-  /**
-   * Discriminator property for type narrowing. Always "Err" for instances of Err.
-   */
   type: "Err";
-
-  /**
-   * The error resulting from a failed operation.
-   */
   error: E;
 }
 
+export interface Cancelled {
+  type: "Cancelled";
+}
+
+export interface Fiber<E, A> {
+  /** Wait for the computation to complete. */
+  readonly join: () => Promise<Ok<A> | Err<E> | Cancelled>;
+  /** Request cancellation. Idempotent. Resolves after finalizers run. */
+  readonly cancel: () => Promise<void>;
+  /** The underlying AbortSignal for interop with platform APIs. */
+  readonly signal: AbortSignal;
+}
+
+type Node<E, A> =
+  | { tag: "Pure"; value: A }
+  | { tag: "Fail"; error: E }
+  | { tag: "Lift"; run: (signal?: AbortSignal) => A | Promise<A>; liftE?: (e: unknown) => E }
+  | { tag: "Map"; io: Node<any, any>; f: (a: any) => A }
+  | { tag: "FlatMap"; io: Node<any, any>; f: (a: any) => IO<any, A> }
+  | { tag: "MapErr"; io: Node<any, any>; f: (e: any) => E }
+  | { tag: "FlatMapErr"; io: Node<any, any>; f: (e: any) => IO<E, A> }
+  | { tag: "Tap"; io: Node<E, A>; f: (a: any) => void | Promise<void> }
+  | { tag: "TapErr"; io: Node<E, A>; f: (e: any) => void | Promise<void> }
+  | { tag: "Ensure"; io: Node<E, A>; predicate: (a: any) => boolean; liftE: (a: any) => E }
+  | { tag: "FoldM"; io: Node<any, any>; onOk: (a: any) => IO<E, A>; onErr: (e: any) => IO<E, A> }
+  | { tag: "OnCancel"; io: Node<E, A>; finalizer: () => void | Promise<void> };
+
+type Frame =
+  | { tag: "Map"; f: (a: any) => any }
+  | { tag: "FlatMap"; f: (a: any) => IO<any, any> }
+  | { tag: "MapErr"; f: (e: any) => any }
+  | { tag: "FlatMapErr"; f: (e: any) => IO<any, any> }
+  | { tag: "Tap"; f: (a: any) => void | Promise<void> }
+  | { tag: "TapErr"; f: (e: any) => void | Promise<void> }
+  | { tag: "FoldM"; onOk: (a: any) => IO<any, any>; onErr: (e: any) => IO<any, any> }
+  | { tag: "Ensure"; predicate: (a: any) => boolean; liftE: (a: any) => any }
+  | { tag: "OnCancel"; finalizer: () => void | Promise<void> };
+
+/** Module-private key for IO's ADT node. Not exported — external code cannot access it. */
+const NODE = Symbol("IO.node");
+
+/** Module-private sentinel tag for typed error escape in Do/parMapN/race. */
+const IO_ESCAPE = Symbol("IO.escape");
+
+interface IOEscape<E> {
+  readonly [IO_ESCAPE]: true;
+  readonly error: E;
+}
+
+function ioEscape<E>(error: E): IOEscape<E> {
+  return { [IO_ESCAPE]: true, error };
+}
+
+function isIOEscape(e: unknown): e is IOEscape<any> {
+  return e != null && typeof e === "object" && IO_ESCAPE in (e as object);
+}
+
+/** Module-private sentinel for cancellation propagation through Lift boundaries. */
+const IO_CANCELLED = Symbol("IO.cancelled");
+
+interface IOCancelled {
+  readonly [IO_CANCELLED]: true;
+}
+
+function ioCancelled(): never {
+  throw { [IO_CANCELLED]: true } as IOCancelled;
+}
+
+function isIOCancelled(e: unknown): e is IOCancelled {
+  return e != null && typeof e === "object" && IO_CANCELLED in (e as object);
+}
+
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return value != null && typeof (value as any).then === "function";
+}
+
+async function interpret<E, A>(root: Node<E, A>, signal?: AbortSignal): Promise<Ok<A> | Err<E> | Cancelled> {
+  const stack: Frame[] = [];
+  let cur: Node<any, any> = root;
+
+  while (true) {
+    // ── Cancellation check ──────────────────────────────────────────
+    if (signal?.aborted) {
+      const finalizers: Array<() => void | Promise<void>> = [];
+      while (stack.length > 0) {
+        const frame = stack.pop()!;
+        if (frame.tag === "OnCancel") {
+          finalizers.push(frame.finalizer);
+        }
+      }
+      for (const fin of finalizers) {
+        try {
+          const r = fin();
+          if (isThenable(r)) await r;
+        } catch {
+          /* swallow */
+        }
+      }
+      return { type: "Cancelled" };
+    }
+
+    switch (cur.tag) {
+      case "Map":
+        stack.push({ tag: "Map", f: cur.f });
+        cur = cur.io;
+        break;
+      case "FlatMap":
+        stack.push({ tag: "FlatMap", f: cur.f });
+        cur = cur.io;
+        break;
+      case "MapErr":
+        stack.push({ tag: "MapErr", f: cur.f });
+        cur = cur.io;
+        break;
+      case "FlatMapErr":
+        stack.push({ tag: "FlatMapErr", f: cur.f });
+        cur = cur.io;
+        break;
+      case "Tap":
+        stack.push({ tag: "Tap", f: cur.f });
+        cur = cur.io;
+        break;
+      case "TapErr":
+        stack.push({ tag: "TapErr", f: cur.f });
+        cur = cur.io;
+        break;
+      case "FoldM":
+        stack.push({ tag: "FoldM", onOk: cur.onOk, onErr: cur.onErr });
+        cur = cur.io;
+        break;
+      case "Ensure":
+        stack.push({ tag: "Ensure", predicate: cur.predicate, liftE: cur.liftE });
+        cur = cur.io;
+        break;
+      case "OnCancel":
+        stack.push({ tag: "OnCancel", finalizer: cur.finalizer });
+        cur = cur.io;
+        break;
+
+      case "Lift": {
+        const { run, liftE } = cur;
+        try {
+          const result = run(signal);
+          const value = isThenable(result) ? await result : result;
+          cur = { tag: "Pure", value };
+        } catch (e) {
+          if (isIOCancelled(e)) {
+            // Child computation was cancelled — propagate by letting the
+            // cancellation check at the top of the loop fire
+            cur = { tag: "Pure", value: undefined }; // dummy, will be overridden
+            break;
+          }
+          cur = { tag: "Fail", error: liftE ? liftE(e) : e };
+        }
+        break;
+      }
+
+      case "Pure": {
+        if (stack.length === 0) return { type: "Ok", value: cur.value };
+
+        const frame = stack.pop()!;
+        switch (frame.tag) {
+          case "Map":
+            try {
+              cur = { tag: "Pure", value: frame.f(cur.value) };
+            } catch (e) {
+              cur = { tag: "Fail", error: e };
+            }
+            break;
+          case "FlatMap":
+            try {
+              cur = frame.f(cur.value)[NODE];
+            } catch (e) {
+              cur = { tag: "Fail", error: e };
+            }
+            break;
+          case "Tap":
+            try {
+              const r = frame.f(cur.value);
+              if (isThenable(r)) await r;
+            } catch {
+              // Side-effect failure is swallowed — tap preserves the original value
+            }
+            break;
+          case "Ensure":
+            {
+              const val = cur.value;
+              try {
+                if (!frame.predicate(val)) {
+                  cur = { tag: "Fail", error: frame.liftE(val) };
+                }
+              } catch {
+                // Predicate threw — treat as predicate failure to preserve typed error
+                cur = { tag: "Fail", error: frame.liftE(val) };
+              }
+              break;
+            }
+            break;
+          case "FoldM":
+            try {
+              cur = frame.onOk(cur.value)[NODE];
+            } catch (e) {
+              cur = { tag: "Fail", error: e };
+            }
+            break;
+          // Error-only frames: pass through on Ok
+          case "MapErr":
+          case "FlatMapErr":
+          case "TapErr":
+          case "OnCancel":
+            break;
+        }
+        break;
+      }
+
+      case "Fail": {
+        if (stack.length === 0) return { type: "Err", error: cur.error };
+
+        const frame = stack.pop()!;
+        switch (frame.tag) {
+          case "MapErr":
+            try {
+              cur = { tag: "Fail", error: frame.f(cur.error) };
+            } catch (e) {
+              cur = { tag: "Fail", error: e };
+            }
+            break;
+          case "FlatMapErr":
+            try {
+              cur = frame.f(cur.error)[NODE];
+            } catch (e) {
+              cur = { tag: "Fail", error: e };
+            }
+            break;
+          case "TapErr":
+            try {
+              const r = frame.f(cur.error);
+              if (isThenable(r)) await r;
+            } catch {
+              // Side-effect failure is swallowed — tapErr preserves the original error
+            }
+            break;
+          case "FoldM":
+            try {
+              cur = frame.onErr(cur.error)[NODE];
+            } catch (e) {
+              cur = { tag: "Fail", error: e };
+            }
+            break;
+          // Ok-only frames: pass through on Err
+          case "Map":
+          case "FlatMap":
+          case "Tap":
+          case "Ensure":
+          case "OnCancel":
+            break;
+        }
+        break;
+      }
+    }
+  }
+}
+
 /**
- * Represents an encapsulated asynchronous operation that may either result in a value of type `A` (success)
- * or an error of type `E` (failure). The `IO` data type provides methods for constructing, transforming, and composing
- * such operations in a functional style, facilitating error handling and asynchronous workflows.
+ * `IO<E, A>` represents a lazy, composable description of an effectful computation
+ * that may succeed with a value of type `A` or fail with an error of type `E`.
  *
- * @template E The type of the error that the operation may produce.
- * @template A The type of the result that the operation may yield upon success.
+ * Computations are described as an immutable ADT tree and only executed when
+ * `unsafeRun()` is called. The interpreter uses an explicit stack (trampoline)
+ * to evaluate the tree, ensuring stack safety for arbitrarily deep chains.
  */
 export class IO<E, A> {
-  private _effect?: (input: any) => Promise<Err<E> | Ok<A>>;
-  private _operations: Array<(input: any) => Promise<Err<any> | Ok<any>>> = [];
+  /** @internal Keyed by module-private Symbol — inaccessible to external code. */
+  readonly [NODE]: Node<E, A>;
 
-  /**
-   * Private constructor to prevent direct instantiation from outside the class.
-   * Use static factory methods instead.
-   *
-   * @param _eff A function returning a Promise that resolves to either an `Err<E>` or `Ok<A>`.
-   */
-  private constructor(_eff?: () => Promise<Err<E> | Ok<A>>) {
-    if (_eff) {
-      this._operations.push(_eff);
-    }
+  /** @internal */
+  private constructor(node: Node<E, A>) {
+    this[NODE] = node;
   }
 
   /**
-   * Creates an `IO` instance from an asynchronous function. This method allows you to initiate
-   * an `IO` operation that encapsulates an asynchronous effect, which can eventually result in
-   * a successful value of type `A` or an error of type `E`. The `of` method automatically catches
-   * any errors thrown by the asynchronous function and wraps them in an `Err<E>`, while successful
-   * results are wrapped in an `Ok<A>`.
-   *
-   * This approach enables the seamless integration of asynchronous operations into the functional
-   * flow of `IO` operations, providing a foundation for complex asynchronous workflows with integrated
-   * error handling.
-   *
-   * @template E The type of the error that the operation may produce.
-   * @template A The type of the result that the operation may yield upon success.
-   * @param {() => Promise<A>} f An asynchronous function that returns a Promise of a result. The function
-   * should not manually handle errors with try/catch; instead, any thrown errors will be automatically
-   * caught and transformed into an `Err<E>` by the `IO` operation.
-   * @param {(error: unknown) => E} [liftE=(error) => error as E] A function that transforms unknown errors into
-   * type `E`. If not provided, the default transformation casts the error as `E`.
-   * @returns {IO<E, A>} An `IO` instance encapsulating the asynchronous operation, which can later be
-   * executed, transformed, or composed with other `IO` operations.
+   * @internal Type-erased constructor for combinators that change E or A.
+   * Use `new IO(...)` when the return type matches `IO<E, A>` (same types).
+   * Use `IO.wrap(...)` when the combinator changes E or A (e.g. map, flatMap, mapErr, foldM).
    */
-  static of = <E, A>(f: () => Promise<A>, liftE: (error: unknown) => E = (error) => error as E): IO<E, A> =>
-    new IO(async (): Promise<Err<E> | Ok<A>> => {
-      try {
-        return IO.ok(await f());
-      } catch (error: unknown) {
-        return IO.err(liftE(error));
-      }
-    });
-
-  /**
-   * Creates an `IO` instance from a synchronous function. This method enables the wrapping of
-   * synchronous operations within the `IO` monad, allowing these operations to be integrated
-   * into asynchronous workflows managed by `IO`. It provides a way to include synchronous code
-   * that might throw exceptions into the error handling and compositional patterns used by `IO`.
-   *
-   * Any thrown exceptions within the synchronous function are caught and encapsulated as an `Err<E>`,
-   * while successful results are wrapped in an `Ok<A>`. This facilitates uniform error handling and
-   * composition of both synchronous and asynchronous operations within the same functional flow.
-   *
-   * @template E The type of the error that the operation may produce in case of failure.
-   * @template A The type of the result that the operation produces upon success.
-   * @param {() => A} f A synchronous function that returns a result of type `A`. If this function throws
-   * an exception, the exception is caught and transformed into an `Err<E>`, allowing for consistent
-   * error handling within `IO` workflows.
-   * @param {(error: unknown) => E} [liftE=(error) => error as E] A function that transforms unknown errors into
-   * type `E`. If not provided, the default transformation casts the error as `E`.
-   * @returns {IO<E, A>} An `IO` instance encapsulating the synchronous operation. This `IO` can be
-   * executed, transformed, or composed with other `IO` instances in a manner consistent with
-   * asynchronous operations, providing a seamless integration of synchronous code into asynchronous
-   * functional flows.
-   */
-  static ofSync = <E, A>(f: () => A, liftE: (error: unknown) => E = (error) => error as E): IO<E, A> =>
-    new IO(async () => {
-      try {
-        return IO.ok(f());
-      } catch (error: unknown) {
-        return IO.err(liftE(error));
-      }
-    });
-
-  /**
-   * Creates an `Ok` instance representing a successful outcome of an operation with the specified value.
-   * This utility method is used to construct an `Ok<A>` object directly, encapsulating a successful result
-   * of type `A`. It is typically used in scenarios where an immediate representation of a successful
-   * operation is needed, allowing for integration into the functional flow of operations that use the
-   * `Ok` and `Err` pattern for error handling.
-   *
-   * The `ok` method facilitates the creation of `Ok` instances without the need to explicitly construct
-   * the object with its type and value properties, providing a concise and readable way to represent
-   * success states in a type-safe manner.
-   *
-   * @template A The type of the value encapsulated by the successful outcome.
-   * @param {A} value The value to be encapsulated in the `Ok` instance, representing the successful
-   * outcome of an operation.
-   * @returns {Ok<A>} An `Ok<A>` instance containing the provided value, signifying a successful
-   * outcome.
-   */
-  static ok = <A>(value: A): Ok<A> => ({ type: "Ok", value });
-
-  /**
-   * Creates an `Err` instance representing a failed outcome of an operation with the specified error.
-   * This utility method is used to construct an `Err<E>` object directly, encapsulating an error of
-   * type `E`. It is typically used in scenarios where an immediate representation of a failure is
-   * necessary, allowing for integration into the functional flow of operations that use the `Ok` and
-   * `Err` pattern for comprehensive error handling.
-   *
-   * The `err` method simplifies the creation of `Err` instances without the need to explicitly
-   * construct the object with its type and error properties, offering a straightforward and
-   * type-safe manner to represent error states in operations.
-   *
-   * @template E The type of the error encapsulated by the failed outcome.
-   * @param {E} error The error to be encapsulated in the `Err` instance, representing the failed
-   * outcome of an operation.
-   * @returns {Err<E>} An `Err<E>` instance containing the provided error, signifying a failed
-   * outcome.
-   */
-  static err = <E>(error: E): Err<E> => ({ type: "Err", error: error });
-
-  /**
-   * Type guard function that checks if a given effect is an instance of `Ok<A>`. This method is used
-   * to determine whether a given value (which could be either an `Ok<A>` or an `Err<E>`) represents a
-   * successful outcome of an operation. It facilitates type-safe branching logic based on the success
-   * or failure of operations within the context of operations that use the `Ok` and `Err` pattern for
-   * error handling and functional programming flows.
-   *
-   * By using this method, TypeScript's type system can correctly infer the type of the `effect`
-   * argument in branches where this function returns `true`, allowing for safe access to the `value`
-   * property of `Ok<A>` instances without type assertions.
-   *
-   * @template E The type of the error that could be encapsulated by the effect if it represents a failure.
-   * @template A The type of the value that is encapsulated by the effect if it represents a success.
-   * @param {Err<E> | Ok<A>} effect The effect to be checked, which could either be an `Ok<A>` representing
-   * a successful outcome, or an `Err<E>` representing a failed outcome.
-   * @returns {boolean} `true` if the effect is an instance of `Ok<A>`, indicating a successful outcome;
-   * otherwise, `false`.
-   */
-  static isOk = <E, A>(effect: Err<E> | Ok<A>): effect is Ok<A> => effect.type === "Ok";
-
-  /**
-   * Type guard function that checks if a given effect is an instance of `Err<E>`. This method is crucial
-   * for determining whether a given value, which could be either an `Ok<A>` or an `Err<E>`, represents a
-   * failed outcome of an operation. It enables type-safe branching logic based on the success or failure
-   * of operations within the context of utilizing the `Ok` and `Err` pattern for error handling and
-   * functional programming flows.
-   *
-   * Utilizing this method allows TypeScript's type system to accurately infer the type of the `effect`
-   * argument in code branches where this function returns `true`, enabling safe access to the `error`
-   * property of `Err<E>` instances without the need for explicit type assertions.
-   *
-   * @template E The type of the error that is encapsulated by the effect if it represents a failure.
-   * @template A The type of the value that could be encapsulated by the effect if it represents a success.
-   * @param {Err<E> | Ok<A>} effect The effect to be checked, which could either be an `Err<E>` representing
-   * a failed outcome, or an `Ok<A>` representing a successful outcome.
-   * @returns {boolean} `true` if the effect is an instance of `Err<E>`, indicating a failed outcome;
-   * otherwise, `false`.
-   */
-  static isErr = <E, A>(effect: Err<E> | Ok<A>): effect is Err<E> => effect.type === "Err";
-
-  /**
-   * Creates an `IO` instance that represents an operation with no side effects and an undefined result.
-   * This method is useful for initializing an `IO` operation that effectively does nothing, serving as a
-   * neutral element in compositions of `IO` operations. The result of this operation is explicitly typed
-   * as `undefined`, but due to TypeScript's type system, it can be cast to any type `A`, making it
-   * versatile for various initial or placeholder scenarios in functional programming flows.
-   *
-   * The `empty` method facilitates the creation of `IO` instances that can be used as starting points or
-   * placeholders in complex compositions of asynchronous operations, where a no-op or undefined
-   * operation is required. It ensures that even such no-op operations are integrated into the `IO`
-   * monad's error handling and compositional framework.
-   *
-   * @template A The type of the result that this `IO` operation is expected to yield. The actual
-   * operation, however, does not yield any value and is effectively a no-op.
-   * @returns {IO<never, A>} An `IO` instance representing an operation that does nothing and yields
-   * an undefined result. This result is typed as `unknown`, allowing for flexible casting to any
-   * desired result type `A` within the `IO` monad's compositional and type-safe framework.
-   */
-  static empty = <A>(): IO<never, A> => new IO<never, A>(async () => IO.ok(undefined as any as A));
-
-  /**
-   * Creates an `IO` instance that immediately resolves to the given value without performing any
-   * asynchronous operation or side effect. This method is akin to the identity function in functional
-   * programming, returning a value without alteration. It encapsulates the provided value in an `IO`
-   * monad, enabling it to be integrated into the functional flow of `IO` operations.
-   *
-   * The `identity` method is particularly useful for wrapping values in `IO` instances to allow them
-   * to participate in compositions and transformations that expect `IO` types, facilitating a seamless
-   * integration of constant values into asynchronous workflows.
-   *
-   * @template A The type of the value to be encapsulated by the resulting `IO` instance.
-   * @param {A} a The value to be wrapped in an `IO` instance. This value is returned unmodified
-   * by the `IO` operation, effectively making the operation an identity function within the `IO` monad.
-   * @returns {IO<never, A>} An `IO` instance that, when executed, immediately yields the provided
-   * value `a` without any asynchronous operation or side effect. The error type is set to `unknown`
-   * as this operation does not produce errors, ensuring type safety in compositions that may handle
-   * errors.
-   */
-  static identity = <A>(a: A): IO<never, A> => {
-    const effect = new IO<never, A>();
-    effect._operations.push(async () => IO.ok(a));
-    return effect;
-  };
-
-  /**
-   * Creates an `IO` instance that represents a failed operation with a specified error. This method
-   * is used to immediately construct an `IO` operation that results in an error, encapsulating the
-   * error within an `Err<E>` without performing any asynchronous operation or side effect. It provides
-   * a straightforward way to represent known errors or failure states within the `IO` monad, allowing
-   * these errors to be integrated into the functional flow of `IO` operations and handled consistently
-   * with other asynchronous errors.
-   *
-   * The `failed` method is especially useful for starting a chain of `IO` operations with a predefined
-   * error, or for injecting known errors into compositions of `IO` operations for testing or error
-   * handling purposes.
-   *
-   * @template E The type of the error to be encapsulated by the resulting `IO` instance.
-   * @template A The type parameter for the successful result type, which is not used since this operation
-   * fails by design, but is required for type compatibility within the `IO` monad.
-   * @param {E} error The error to be wrapped in an `IO` instance. This error is returned as the failure
-   * reason by the `IO` operation, effectively making the operation a constant failure function within
-   * the `IO` monad.
-   * @returns {IO<E, A>} An `IO` instance that, when executed, immediately yields the provided error `error`
-   * as a failure, without any asynchronous operation or side effect. The successful result type `A` is
-   * specified for type compatibility but is not used since this operation results in an error.
-   */
-  static failed = <E, A>(error: E): IO<E, A> => new IO(() => Promise.resolve(IO.err(error)));
-
-  /**
-   * Refines the successful result of this `IO` operation based on a specified predicate function. If the
-   * predicate returns `true` for the result, the operation continues to be considered successful. If the
-   * predicate returns `false`, the provided handler function is called with the current result to produce
-   * a new error, which then turns the operation into a failure.
-   *
-   * This method allows for conditional validation of the result within the `IO` monad, enabling the
-   * creation of more complex logical flows where the outcome of an operation can be refined or altered
-   * based on dynamic conditions. It is particularly useful for cases where an operation's success needs
-   * to be further qualified by additional criteria not covered by the operation itself.
-   *
-   * @template A The type of the result that the operation may yield upon success.
-   * @template E The type of the error that the operation may produce either initially or as a result of
-   * refinement failure.
-   * @param {function(a: A): boolean} predicate A function that takes the current successful result and
-   * returns a boolean indicating whether the result meets the specified criteria (`true`) or not (`false`).
-   * @param {function(a: A): E} liftE A function that takes the current result (in case the predicate
-   * returns `false`) and returns a new error of type `E`, which is then used to represent the refined
-   * failure state of the operation.
-   * @returns {IO<E, A>} An `IO` instance representing the refined operation. If the predicate function
-   * returns `true` for the original result, the operation remains successful. If the predicate returns
-   * `false`, the operation is considered failed with the new error produced by the handler function.
-   */
-  refine(predicate: (a: A) => boolean, liftE: (a: A) => E): IO<E, A> {
-    const effect = new IO<E, A>();
-    effect._operations = [
-      ...this._operations,
-      async (prev: Err<E> | Ok<A>): Promise<Err<E> | Ok<A>> => {
-        if (IO.isOk(prev)) {
-          return predicate(prev.value) ? prev : IO.err(liftE(prev.value));
-        }
-        return prev;
-      },
-    ];
-    return effect;
+  private static wrap<E, A>(node: Node<any, any>): IO<E, A> {
+    return new IO<E, A>(node as Node<E, A>);
   }
 
   /**
-   * Transforms the successful result of this `IO` operation using a provided function. If the operation
-   * is successful, the transformation function is applied to the result, and a new `IO` instance
-   * encapsulating the transformed result is returned. If the operation fails, the error is propagated
-   * unchanged.
+   * Creates an IO from an effectful function that may be synchronous or asynchronous.
+   * The function is not executed until `unsafeRun()` is called on the resulting IO,
+   * preserving laziness. The interpreter detects whether the return value is a
+   * Promise at runtime and awaits only when necessary.
    *
-   * This method follows the functor pattern, allowing for the results of `IO` operations to be mapped
-   * to different types or values without altering the overall flow of the operation. It is a foundational
-   * method for functional programming, enabling operations to be composed and their results transformed
-   * in a declarative manner.
+   * If the function throws (or the returned Promise rejects), the error is captured
+   * as the `Err` channel. When `liftE` is provided, caught exceptions are transformed
+   * into the error type `E` before being placed in the error channel.
    *
-   * @template A The type of the original result that the operation yields upon success.
-   * @template B The type of the transformed result.
-   * @template E The type of the error that the operation may produce.
-   * @param {function(a: A): B} f A transformation function that takes the successful result of the current
-   * `IO` operation as input and returns a new value of type `B`, which will be encapsulated in the returned
-   * `IO` instance.
-   * @returns {IO<E, B>} A new `IO` instance representing the operation with its result transformed by the
-   * provided function. If the original operation was successful, the new instance will encapsulate the
-   * transformed result. If the original operation failed, the new instance will encapsulate the original
-   * error.
-   */
-  map = <B>(f: (a: A) => B): IO<E, B> => {
-    const effect = new IO<E, B>();
-    effect._operations = [
-      ...this._operations,
-      async (prev: Err<E> | Ok<A>): Promise<Err<E> | Ok<B>> => {
-        if (IO.isOk(prev)) {
-          return IO.ok(f(prev.value));
-        }
-        return prev as Err<E>;
-      },
-    ];
-    return effect;
-  };
-
-  /**
-   * Transforms the error of this `IO` operation using a provided function. If the operation fails, the
-   * transformation function is applied to the error, and a new `IO` instance encapsulating the
-   * transformed error is returned. If the operation is successful, its result is propagated unchanged.
-   *
-   * This method enables the customization or refinement of error types within the `IO` monad, allowing
-   * for more granular error handling and the possibility to adapt errors to different contexts or
-   * requirements. It follows the concept of error mapping found in functional programming, providing a
-   * declarative way to handle and transform errors in asynchronous operations.
-   *
-   * @template E The type of the original error that the operation may produce.
-   * @template F The type of the transformed error. `F` extends `E` to ensure that the transformed error
-   * is compatible with the original error type, allowing for type-safe transformations.
-   * @template A The type of the result that the operation yields upon success.
-   * @param {function(e: E): F} f A transformation function that takes the error of the failed operation
-   * as input and returns a new error of type `F`. This transformed error will be encapsulated in the
-   * returned `IO` instance if the original operation fails.
-   * @returns {IO<F, A>} A new `IO` instance representing the operation with its error transformed by the
-   * provided function. If the original operation failed, the new instance will encapsulate the
-   * transformed error. If the original operation was successful, the new instance will encapsulate the
-   * original result.
-   */
-  mapError = <F>(f: (e: E) => F): IO<F, A> => {
-    const effect = new IO<F, A>();
-    effect._operations = [
-      ...this._operations,
-      async (prev: Err<E> | Ok<A>): Promise<Err<F> | Ok<A>> => {
-        if (IO.isErr(prev)) {
-          return IO.err(f(prev.error));
-        }
-        return prev;
-      },
-    ];
-    return effect;
-  };
-
-  /**
-   * Transforms the successful, non-null result of this `IO` operation using a provided function,
-   * returning a new `IO` instance that encapsulates the transformed result. This method is similar
-   * to `map`, but it specifically operates on non-null results, ensuring that the transformation
-   * function is only applied to values that are neither `null` nor `undefined`. If the operation
-   * fails, or if the result is `null` or `undefined`, the original error or a `null`/`undefined`
-   * result is propagated unchanged.
-   *
-   * The `mapNotNull` method is useful in scenarios where the operation's result may legitimately
-   * be `null` or `undefined`, and such results should be treated differently from other successful
-   * outcomes. It allows for a safe transformation of only those results that are present, avoiding
-   * potential runtime errors due to null or undefined values.
-   *
-   * @template A The type of the original result that the operation yields upon success, excluding
-   * `null` and `undefined`.
-   * @template B The type of the transformed result.
-   * @template E The type of the error that the operation may produce.
-   * @param {function(a: NonNullable<A>): B} f A transformation function that takes the successful,
-   * non-null result of the current `IO` operation as input and returns a new value of type `B`,
-   * which will be encapsulated in the returned `IO` instance.
-   * @returns {IO<E, B>} A new `IO` instance representing the operation with its result transformed
-   * by the provided function, if the original result was non-null. If the original operation failed,
-   * or if the result was `null` or `undefined`, the new instance will encapsulate the original error
-   * or a `null`/`undefined` result.
-   */
-  mapNotNull = <B>(f: (a: NonNullable<A>) => B): IO<E, B> => {
-    const effect = new IO<E, B>();
-    effect._operations = [
-      ...this._operations,
-      async (prev: Err<E> | Ok<A>): Promise<Err<E> | Ok<B>> => {
-        if (IO.isOk(prev) && prev.value) {
-          return IO.ok(f(prev.value as NonNullable<A>));
-        }
-        return prev as Err<E>;
-      },
-    ];
-    return effect;
-  };
-
-  /**
-   * Transforms the successful result of this `IO` operation into another `IO` operation using a
-   * provided function, and then flattens the result into a single `IO` instance. This method is
-   * essential for composing multiple asynchronous operations in a sequence where each operation
-   * may depend on the result of the previous one.
-   *
-   * Unlike `map`, which applies a transformation function to a successful result and wraps it in a
-   * new `IO` instance, `flatMap` expects the transformation function to return an `IO` instance
-   * itself. This allows for the dynamic chaining of operations based on the results of preceding
-   * operations. If the initial operation fails, `flatMap` bypasses the transformation function
-   * and propagates the error.
-   *
-   * `flatMap` is a powerful tool for creating complex, dependent asynchronous workflows in a
-   * functional style, ensuring that errors are consistently handled and propagated throughout the
-   * chain of operations.
-   *
-   * @template A The type of the original result that the operation yields upon success.
-   * @template B The type of the result produced by the subsequent `IO` operation.
-   * @template E The type of the error that the operations may produce.
-   * @param {function(a: A): IO<E, B>} f A transformation function that takes the successful result
-   * of the current `IO` operation as input and returns a new `IO` instance representing the next
-   * operation in the sequence. This allows for the result of the current operation to be used in
-   * determining the next step in a workflow.
-   * @returns {IO<E, B>} A new `IO` instance that represents the flattened result of applying the
-   * transformation function to the original operation's successful result, and executing the
-   * resulting `IO` operation. If the original operation fails, the new instance will encapsulate
-   * the original error, effectively skipping the transformation.
-   */
-  flatMap = <B>(f: (a: A) => IO<E, B>): IO<E, B> => {
-    const effect = new IO<E, B>();
-    effect._operations = [
-      ...this._operations,
-      async (prev: Err<E> | Ok<A>): Promise<Err<E> | Ok<B>> => {
-        if (IO.isOk(prev)) {
-          const next = f(prev.value);
-          const combined = next._operations;
-          let result: Err<E> | Ok<any> = prev;
-          for (const op of combined) {
-            result = await op(result);
-            if (IO.isErr(result)) {
-              break;
-            }
-          }
-          return result;
-        }
-        return prev as Err<E>;
-      },
-    ];
-    return effect;
-  };
-
-  /**
-   * Transforms the successful, non-null result of this `IO` operation into another `IO` operation using a
-   * provided function, similar to `flatMap`, but specifically operates on non-null results. The transformation
-   * function is applied only if the original operation's result is neither `null` nor `undefined`. This method
-   * then flattens the result into a single `IO` instance. If the initial operation fails, or if the result is
-   * `null` or `undefined`, `flatMapNotNull` bypasses the transformation function and propagates the original
-   * error or results in a new `IO` operation that effectively represents a `null` or `undefined` value.
-   *
-   * `flatMapNotNull` is particularly useful for sequencing asynchronous operations that are dependent on the
-   * presence of a non-null result from the previous operation, enabling the creation of complex workflows
-   * that safely handle nullable types without introducing explicit null checks at each step.
-   *
-   * @template A The type of the original result that the operation yields upon success, excluding
-   * `null` and `undefined`.
-   * @template B The type of the result produced by the subsequent `IO` operation.
-   * @template E The type of the error that the operations may produce.
-   * @param {function(a: NonNullable<A>): IO<E, B>} f A transformation function that takes the successful,
-   * non-null result of the current `IO` operation as input and returns a new `IO` instance representing the
-   * next operation in the sequence. This allows for the result of the current operation to be used in
-   * determining the next step in a workflow, with the assurance that the value is neither `null` nor
-   * `undefined`.
-   * @returns {IO<E, B>} A new `IO` instance that represents the flattened result of applying the
-   * transformation function to the original operation's successful, non-null result, and executing the
-   * resulting `IO` operation. If the original operation fails, or if the result is `null` or `undefined`,
-   * the new instance will encapsulate the original error or represent a `null`/`undefined` outcome,
-   * effectively skipping the transformation.
-   */
-  flatMapNotNull = <B>(f: (a: NonNullable<A>) => IO<E, B>): IO<E, B> => {
-    const effect = new IO<E, B>();
-    effect._operations = [
-      ...this._operations,
-      async (prev: Err<E> | Ok<A>): Promise<Err<E> | Ok<B>> => {
-        if (IO.isOk(prev) && prev.value) {
-          const next = f(prev.value as NonNullable<A>);
-          const combined = next._operations;
-          let result: Err<E> | Ok<any> = prev;
-          for (const op of combined) {
-            result = await op(result);
-            if (IO.isErr(result)) {
-              break;
-            }
-          }
-          return result;
-        }
-        return prev as Err<E>;
-      },
-    ];
-    return effect;
-  };
-
-  /**
-   * @experimental
-   * Retries the effect if the given condition is met.
-   *
-   * This method wraps the effect in a retry mechanism defined by a `Schedule` instance,
-   * using the provided retry policy. If no error transformation function (`liftE`) is provided,
-   * a default transformation will structure the error as an object containing `message`, `name`,
-   * and `stack`.
-   *
-   * @template E - The type of error that the effect can produce.
-   * @template A - The type of value that the effect can produce.
-   *
-   * @param {(error: E) => boolean} condition - A function that determines whether the effect
-   *   should be retried based on the error. Returns `true` to retry, `false` to stop retrying.
-   * @param {((error: Error) => any)} [liftE] - A function to transform the error into a user-defined
-   *   structure. Defaults to a function that returns an object with `message`, `name`, and `stack`.
-   * @param {Policy} [policy=defaultPolicy()] - The retry policy, which defines the number of retries,
-   *   delay between retries, and backoff strategy. Defaults to the `defaultPolicy`.
-   *
-   * @returns {IO<E, A>} A new `IO` instance that retries the effect based on the given condition
-   *   and policy.
+   * @template E The error type.
+   * @template A The success type.
+   * @param {() => A | Promise<A>} f The effectful function to defer.
+   * @param {(e: unknown) => E} [liftE] Optional function to transform caught exceptions into the error type E.
+   * @returns {IO<E, A>} A new IO that, when executed, will run the function and capture its result.
    *
    * @example
-   * // Retry a failing HTTP request if the error message contains "retryable"
-   * HttpClient.get("/api/resource")
-   *   .retryIf((error) => error.message.includes("retryable")) // Retry condition
-   *   .runAsync();
+   * // Synchronous effect
+   * const syncIO = IO.lift(() => 42);
    *
-   * // Output (after retries are exhausted):
-   * // {
-   * //   message: "Original error message",
-   * //   name: "Error",
-   * //   stack: "Error stack trace..."
-   * // }
+   * // Asynchronous effect
+   * const asyncIO = IO.lift(() => fetch('/api/data').then(r => r.json()));
+   *
+   * // With error transformation
+   * const typedIO = IO.lift(
+   *   () => riskyOperation(),
+   *   (e) => new AppError(String(e))
+   * );
    */
-  retryIf<E, A>(
-    this: IO<E, A>,
-    condition: (error: E) => boolean,
-    policy: Policy = defaultPolicy(),
-    liftE?: (error: Error) => any
-  ): IO<E, A> {
-    if (policy.recurs < 1 || policy.factor < 1 || policy.delay < 0 || (policy.timeout && policy.timeout < 0)) {
-      policy = defaultPolicy();
-    }
-    const scheduler = new Schedule(policy);
-    if (!liftE) {
-      liftE = (error: Error): any => ({
-        message: error.message,
-        name: error.name,
-        stack: error.stack,
-      });
-    }
-    return scheduler.retryIf(this, condition, liftE);
+  static lift<E, A>(f: (signal?: AbortSignal) => A | Promise<A>, liftE?: (e: unknown) => E): IO<E, A> {
+    return new IO({ tag: "Lift", run: f, liftE });
   }
 
   /**
-   * Handles both the success (`Ok`) and failure (`Err`) cases of the current `IO` computation
-   * and returns a new `IO` instance based on the provided handlers.
+   * Creates an IO from a function that receives an `AbortSignal` for cooperative cancellation.
+   * Use this when the underlying operation supports cancellation (e.g., `fetch`, streams, timers).
    *
-   * This method allows branching logic for both `Ok` and `Err` scenarios, enabling seamless
-   * composition of computations. It is a non-terminal operation, meaning the returned `IO`
-   * can be further composed and executed lazily.
+   * The signal is provided by the interpreter when the IO is forked. If the IO is run
+   * without forking (via `unsafeRun`), the signal is never aborted.
    *
-   * @template E - The error type of the current `IO`.
-   * @template F - The error type of the resulting `IO` after applying the handlers.
-   * @template A - The success type of the current `IO`.
-   * @template B - The success type of the resulting `IO` after applying the handlers.
-   *
-   * @param {function(E): IO<F, B>} onError - A handler function to process the `Err` case.
-   *        It receives the error value and returns a new `IO` instance for further computation.
-   * @param {function(A): IO<F, B>} onSuccess - A handler function to process the `Ok` case.
-   *        It receives the success value and returns a new `IO` instance for further computation.
-   *
-   * @returns {IO<F, B>} A new `IO` instance representing the result of applying the appropriate
-   *          handler (`onError` or `onSuccess`) to the current computation.
+   * @template E The error type.
+   * @template A The success type.
+   * @param {(signal: AbortSignal) => A | Promise<A>} f The cancellable effectful function.
+   * @param {(e: unknown) => E} [liftE] Optional function to transform caught exceptions into E.
+   * @returns {IO<E, A>} A new IO that cooperates with cancellation.
    *
    * @example
-   * const task: IO<string, number> = IO.ofSync(() => 42);
-   *
-   * const result = await task.match(
-   *   (err) => IO.failed(`Recovered from error: ${err}`),
-   *   (value) => IO.identity(value * 2)
-   * ).runAsync();
-   *
-   * console.log(result); // { type: "Ok", value: 84 }
+   * const io = IO.cancellable<AppError, Response>(
+   *   (signal) => fetch('/api/data', { signal }),
+   *   (e) => new AppError(String(e))
+   * );
    */
-  match<E, F, A, B>(this: IO<E, A>, onError: (e: E) => IO<F, B>, onSuccess: (a: A) => IO<F, B>): IO<F, B> {
-    const effect = new IO<F, B>();
-    effect._operations = [
-      ...this._operations,
-      async (prev: Err<E> | Ok<A>): Promise<Err<F> | Ok<B>> => {
-        if (prev.type === "Ok") {
-          return await onSuccess(prev.value).runAsync();
-        } else {
-          return await onError(prev.error).runAsync();
-        }
-      },
-    ];
-    return effect;
+  static cancellable<E, A>(f: (signal: AbortSignal) => A | Promise<A>, liftE?: (e: unknown) => E): IO<E, A> {
+    return new IO({ tag: "Lift", run: (signal?: AbortSignal) => f(signal ?? new AbortController().signal), liftE });
   }
 
   /**
-   * @deprecated use `parZip` instead
-   * Combines two `IO` operations into a single `IO` operation that, when executed, will run both
-   * operations in parallel and encapsulate their results in a tuple. If both operations succeed, the
-   * resulting `IO` instance will contain an `Ok` with a tuple of the results. If one or both operations
-   * fail, the resulting `IO` instance will contain an `Err` with a non-empty list of errors.
+   * Lifts an already-computed value into IO with no side effect.
+   * The value is available immediately — no deferred computation takes place.
    *
-   * This method is useful for scenarios where two independent asynchronous operations need to be
-   * executed and their results combined. The `zip2` method ensures that errors from both operations are
-   * captured and combined into a single error value if necessary, allowing for comprehensive error
-   * handling that accounts for the potential failure of either or both operations.
+   * This is useful for wrapping a known value in the IO type so it can be composed
+   * with other IO operations via `flatMap`, `map`, etc.
    *
-   * @template E The type of the errors that the input `IO` operations may produce. The resulting `IO`
-   * operation will produce a `NonEmptyList<E>` of errors if failures occur.
-   * @template A The type of the result produced by the first `IO` operation.
-   * @template B The type of the result produced by the second `IO` operation.
-   * @param {IO<E, A>} f1 The first `IO` operation to be combined.
-   * @param {IO<E, B>} f2 The second `IO` operation to be combined.
-   * @returns {IO<NonEmptyList<E>, [A, B]>} An `IO` instance representing the combined operation. On
-   * success, it yields an `Ok` with a tuple containing the results of `f1` and `f2`. On failure, it
-   * yields an `Err` with a non-empty list of errors from `f1` and/or `f2`.
-   */
-  static zip2<E, A, B>(f1: IO<E, A>, f2: IO<E, B>): IO<NonEmptyList<E>, [A, B]> {
-    return new IO(async () => {
-      const results = await Promise.all([f1.runAsync(), f2.runAsync()]);
-      if (results.every((result) => result.type === "Ok")) {
-        const res = results as [Ok<A>, Ok<B>];
-        return IO.ok([res[0].value, res[1].value]);
-      } else {
-        const errors = results.flatMap((result) => (result.type === "Ok" ? [] : result.error));
-        return IO.err(NonEmptyList.fromArray(errors));
-      }
-    });
-  }
-
-  /**
-   * @deprecated use `parZip` instead
-   * Combines three `IO` operations into a single `IO` operation that, when executed, will run all
-   * three operations in parallel and encapsulate their results in a tuple. If all operations succeed,
-   * the resulting `IO` instance will contain an `Ok` with a tuple of the results. If any of the
-   * operations fail, the resulting `IO` instance will contain an `Err` with a non-empty list of errors,
-   * aggregating the errors from any and all failed operations.
-   *
-   * This method is especially useful for scenarios where multiple independent asynchronous operations
-   * need to be executed concurrently and their results combined. It allows for efficient parallel
-   * execution while ensuring comprehensive error handling, capturing and combining errors from all
-   * operations into a single error value if needed.
-   *
-   * @template E The type of the errors that the input `IO` operations may produce. The resulting `IO`
-   * operation will produce a `NonEmptyList<E>` of errors if any failures occur.
-   * @template A The type of the result produced by the first `IO` operation.
-   * @template B The type of the result produced by the second `IO` operation.
-   * @template C The type of the result produced by the third `IO` operation.
-   * @param {IO<E, A>} f1 The first `IO` operation to be combined.
-   * @param {IO<E, B>} f2 The second `IO` operation to be combined.
-   * @param {IO<E, C>} f3 The third `IO` operation to be combined.
-   * @returns {IO<NonEmptyList<E>, [A, B, C]>} An `IO` instance representing the combined operation. On
-   * success, it yields an `Ok` with a tuple containing the results of `f1`, `f2`, and `f3`. On failure,
-   * it yields an `Err` with a non-empty list of errors from `f1`, `f2`, and/or `f3`.
-   */
-  static zip3<E, A, B, C>(f1: IO<E, A>, f2: IO<E, B>, f3: IO<E, C>): IO<NonEmptyList<E>, [A, B, C]> {
-    return new IO(async () => {
-      const results = await Promise.all([f1.runAsync(), f2.runAsync(), f3.runAsync()]);
-      if (results.every((result) => result.type === "Ok")) {
-        const res = results as [Ok<A>, Ok<B>, Ok<C>];
-        return IO.ok([res[0].value, res[1].value, res[2].value]);
-      } else {
-        const errors = results.flatMap((result) => (result.type === "Ok" ? [] : result.error));
-        return IO.err(NonEmptyList.fromArray(errors));
-      }
-    });
-  }
-
-  /**
-   * @experimental
-   * Combines multiple `IO` operations into a single `IO` operation that, when executed, will run all
-   * operations in parallel and process their results using a provided callback function. If all operations
-   * succeed, the resulting `IO` instance will contain an `Ok` with the result of the callback function applied
-   * to the results of the `IO` operations. If one or more operations fail, the resulting `IO` instance will
-   * contain an `Err` with a non-empty list of errors.
-   *
-   * @template E - The type of the error.
-   * @template T - A tuple type representing the types of the values contained in each IO instance.
-   * @template R - The return type of the callback function.
-   * @param {...{ [K in keyof T]: IO<E, T[K]> }, (...args: T) => R} ops - A variable number of IO operations to
-   * be executed in parallel, followed by a callback function that processes the results of the IO operations.
-   * @returns {IO<NonEmptyList<E>, R>} - A new IO instance that resolves to the result of the callback function
-   *                                    if all operations succeed, or a NonEmptyList of errors if any operation fails.
-   * @example
-   * const first = IO.ofSync(() => 1);
-   * const second = IO.ofSync(() => "2");
-   *
-   * const result = await IO.parZip(first, second, (num, str) => `${num}, ${str}`).runAsync();
-   *
-   * switch (result.type) {
-   *   case "Err":
-   *     console.error("Errors:", result.error.errors);
-   *   case "Ok":
-   *     console.log(result.value); // Output: "1, 2"
-   * }
-   */
-  static parZip<E, T extends any[], R>(
-    ...ops: [...{ [K in keyof T]: IO<E, T[K]> }, (...args: T) => R]
-  ): IO<NonEmptyList<E>, R> {
-    const input = ops.slice(0, -1) as { [K in keyof T]: IO<E, T[K]> };
-    const combiner = ops[ops.length - 1] as (...args: T) => R;
-    const effect = new IO<NonEmptyList<E>, R>();
-
-    effect._operations.push(async () => {
-      const promises = input.map((io) => {
-        if (!io._effect) {
-          io._compose();
-        }
-        return io._effect!(undefined);
-      });
-
-      const results = await Promise.all(promises);
-
-      const errors = results.filter((result): result is Err<E> => result.type === "Err").map((result) => result.error);
-
-      if (errors.length > 0) {
-        return IO.err(NonEmptyList.fromArray(errors));
-      }
-
-      const values = results.filter((result): result is Ok<any> => result.type === "Ok").map(({ value }) => value) as T;
-
-      return IO.ok(combiner(...values));
-    });
-
-    return effect;
-  }
-
-  /**
-   * Races multiple `IO` operations against each other, returning the result of the first one to complete successfully.
-   * If all operations fail, returns an `Err` containing a non-empty list of all errors encountered.
-   *
-   * This method is useful for implementing timeout patterns, fallback strategies, or optimistic concurrent operations
-   * where you want the fastest successful result. All IO operations are started in parallel, and the first successful
-   * completion wins the race.
-   *
-   * Note: Unlike `parZip`, `race` does not wait for all operations to complete. As soon as one succeeds, that result
-   * is returned. If all operations fail, all errors are collected and returned.
-   *
-   * @template E The type of errors that the IO operations may produce.
-   * @template A The type of the successful result.
-   * @param {...IO<E, A>[]} ops A variable number of IO operations to race against each other.
-   * @returns {IO<NonEmptyList<E>, A>} An IO instance that resolves to the first successful result,
-   *          or an error containing all failures if no operation succeeds.
+   * @template A The type of the value.
+   * @param {A} a The value to wrap.
+   * @returns {IO<never, A>} An IO that immediately succeeds with the given value.
    *
    * @example
-   * // Race between primary and backup data sources
-   * const primary = IO.of(async () => fetchFromPrimary());
-   * const backup = IO.of(async () => fetchFromBackup());
+   * const io = IO.pure(42);
+   * const result = await io.unsafeRun(); // { type: "Ok", value: 42 }
+   */
+  static pure<A>(a: A): IO<never, A> {
+    return new IO({ tag: "Pure", value: a });
+  }
+
+  /**
+   * Creates an IO that fails immediately with the given error.
+   * No computation is performed — the error is placed directly in the error channel.
    *
-   * const result = await IO.race(primary, backup).runAsync();
-   * // Returns whichever completes successfully first
+   * @template E The error type.
+   * @template A The success type (defaults to `never` since this IO never succeeds).
+   * @param {E} error The error value.
+   * @returns {IO<E, A>} An IO that immediately fails with the given error.
    *
    * @example
-   * // Implement a timeout pattern
-   * const operation = IO.of(async () => slowOperation());
-   * const timeout = IO.of(async () => {
-   *   await new Promise(resolve => setTimeout(resolve, 5000));
-   *   throw new Error("Timeout after 5 seconds");
+   * const io = IO.fail(new Error("something went wrong"));
+   * const result = await io.unsafeRun(); // { type: "Err", error: Error("something went wrong") }
+   */
+  static fail<E, A = never>(error: E): IO<E, A> {
+    return new IO({ tag: "Fail", error });
+  }
+
+  /**
+   * An IO that succeeds with `void`. Useful as a no-op placeholder
+   * or as the terminal value in a chain of side-effecting operations.
+   *
+   * @example
+   * const io = IO.unit;
+   * const result = await io.unsafeRun(); // { type: "Ok", value: undefined }
+   */
+  static readonly unit: IO<never, void> = new IO<never, void>({
+    tag: "Pure",
+    value: undefined as unknown as void,
+  });
+
+  /**
+   * Creates an Ok result value. Convenience constructor for building result values
+   * outside of the IO execution context.
+   *
+   * @template A The type of the success value.
+   * @param {A} value The success value.
+   * @returns {Ok<A>} A result representing success.
+   */
+  static ok<A>(value: A): Ok<A> {
+    return { type: "Ok", value };
+  }
+
+  /**
+   * Creates an Err result value. Convenience constructor for building result values
+   * outside of the IO execution context.
+   *
+   * @template E The type of the error value.
+   * @param {E} error The error value.
+   * @returns {Err<E>} A result representing failure.
+   */
+  static err<E>(error: E): Err<E> {
+    return { type: "Err", error };
+  }
+
+  /**
+   * Transforms the success value of this IO using the provided function.
+   * If this IO fails, the function is not called and the error propagates unchanged.
+   *
+   * This is an O(1) operation — it wraps the current computation in a new node
+   * without executing anything.
+   *
+   * @template B The type of the transformed value.
+   * @param {(a: A) => B} f The transformation function.
+   * @returns {IO<E, B>} A new IO representing the transformed computation.
+   *
+   * @example
+   * const io = IO.lift(() => 21).map(n => n * 2);
+   * const result = await io.unsafeRun(); // { type: "Ok", value: 42 }
+   */
+  map<B>(f: (a: A) => B): IO<E, B> {
+    return IO.wrap({ tag: "Map", io: this[NODE], f });
+  }
+
+  /**
+   * Chains a dependent IO computation on the success value.
+   * If this IO fails, the function is not called and the error propagates unchanged.
+   *
+   * This is the monadic `bind` operation, enabling sequential composition of IO
+   * operations where each step may depend on the result of the previous one.
+   *
+   * @template B The type of the value produced by the chained computation.
+   * @param {(a: A) => IO<E, B>} f A function that takes the success value and returns a new IO.
+   * @returns {IO<E, B>} A new IO representing the composed computation.
+   *
+   * @example
+   * const io = IO.lift(() => 1).flatMap(n => IO.lift(() => n + 1));
+   * const result = await io.unsafeRun(); // { type: "Ok", value: 2 }
+   */
+  flatMap<B>(f: (a: A) => IO<E, B>): IO<E, B> {
+    return IO.wrap({ tag: "FlatMap", io: this[NODE], f });
+  }
+
+  /**
+   * Transforms the error value of this IO using the provided function.
+   * If this IO succeeds, the function is not called and the value propagates unchanged.
+   *
+   * Useful for converting raw exceptions or generic errors into typed domain errors.
+   *
+   * @template F The type of the transformed error.
+   * @param {(e: E) => F} f The error transformation function.
+   * @returns {IO<F, A>} A new IO with the transformed error type.
+   *
+   * @example
+   * const io = IO.lift(() => { throw new Error("boom"); })
+   *   .mapErr(e => new AppError(e.message));
+   */
+  mapErr<F>(f: (e: E) => F): IO<F, A> {
+    return IO.wrap({ tag: "MapErr", io: this[NODE], f });
+  }
+
+  /**
+   * Transforms both the error and success channels simultaneously.
+   * This is the Bifunctor `bimap` operation.
+   *
+   * @template F The transformed error type.
+   * @template B The transformed success type.
+   * @param {(e: E) => F} fe The error transformation function.
+   * @param {(a: A) => B} fa The success transformation function.
+   * @returns {IO<F, B>} A new IO with both channels transformed.
+   *
+   * @example
+   * const io = IO.lift(() => 42)
+   *   .bimap(
+   *     err => `Error: ${err}`,
+   *     val => val * 2
+   *   );
+   */
+  bimap<F, B>(fe: (e: E) => F, fa: (a: A) => B): IO<F, B> {
+    return this.map(fa).mapErr(fe);
+  }
+
+  /**
+   * Chains a dependent IO computation on the error value.
+   * If this IO succeeds, the function is not called and the value propagates unchanged.
+   * If this IO fails, the function receives the error and returns a new IO
+   * that replaces the failed computation.
+   *
+   * This is the error-channel counterpart to `flatMap`.
+   *
+   * @param {(error: E) => IO<E, A>} f A function that takes the error and returns a new IO.
+   * @returns {IO<E, A>} A new IO that either succeeds normally or recovers from the error.
+   *
+   * @example
+   * const io = IO.fail("not found")
+   *   .flatMapErr(err => IO.lift(() => fetchFromFallback()));
+   */
+  flatMapErr(f: (error: E) => IO<E, A>): IO<E, A> {
+    return IO.wrap({ tag: "FlatMapErr", io: this[NODE], f });
+  }
+
+  /**
+   * Executes a side-effect on the success value without changing the result.
+   * If this IO fails, the function is not called. The callback may be synchronous
+   * or asynchronous — the interpreter awaits if it returns a Promise.
+   *
+   * If the side-effect throws, the exception is swallowed and the original success
+   * value is preserved. Use `map` or `flatMap` if failure should propagate.
+   *
+   * @param {(a: A) => void | Promise<void>} f The side-effect function.
+   * @returns {IO<E, A>} A new IO that performs the side-effect but preserves the original result.
+   *
+   * @example
+   * const io = IO.lift(() => 42).tap(value => console.log("Got:", value));
+   */
+  tap(f: (a: A) => void | Promise<void>): IO<E, A> {
+    return IO.wrap({ tag: "Tap", io: this[NODE], f });
+  }
+
+  /**
+   * Executes a side-effect on the error value without changing the result.
+   * If this IO succeeds, the function is not called. The callback may be synchronous
+   * or asynchronous — the interpreter awaits if it returns a Promise.
+   *
+   * If the side-effect throws, the exception is swallowed and the original error
+   * is preserved. Use `mapErr` or `flatMapErr` if failure should propagate.
+   *
+   * @param {(e: E) => void | Promise<void>} f The side-effect function.
+   * @returns {IO<E, A>} A new IO that performs the side-effect but preserves the original error.
+   *
+   * @example
+   * const io = IO.fail(new Error("boom")).tapErr(e => logger.error(e));
+   */
+  tapErr(f: (e: E) => void | Promise<void>): IO<E, A> {
+    return IO.wrap({ tag: "TapErr", io: this[NODE], f });
+  }
+
+  /**
+   * Validates the success value against a predicate (Cats `ensure`).
+   * If the predicate returns `false`, the success is converted into an error
+   * using the `liftE` function. If this IO already fails, the predicate is not checked.
+   *
+   * @param {(a: A) => boolean} predicate The validation function.
+   * @param {(a: A) => E} liftE Converts the value into an error when the predicate fails.
+   * @returns {IO<E, A>} A new IO that validates the result.
+   *
+   * @example
+   * const io = IO.lift(() => fetchAge())
+   *   .ensure(age => age >= 18, age => `Must be 18+, got ${age}`);
+   */
+  ensure(predicate: (a: A) => boolean, liftE: (a: A) => E): IO<E, A> {
+    return IO.wrap({ tag: "Ensure", io: this[NODE], predicate, liftE });
+  }
+
+  /**
+   * Registers a cleanup action that runs only if this IO is cancelled.
+   * If the IO completes normally (Ok or Err), the finalizer is never called.
+   * Finalizers run in LIFO order (innermost first) during cancellation unwinding.
+   *
+   * @param {() => void | Promise<void>} finalizer The cleanup function.
+   * @returns {IO<E, A>} A new IO with the finalizer registered.
+   *
+   * @example
+   * const io = IO.cancellable((signal) => fetch('/api', { signal }))
+   *   .onCancel(() => console.log("Request was cancelled"));
+   */
+  onCancel(finalizer: () => void | Promise<void>): IO<E, A> {
+    return IO.wrap({ tag: "OnCancel", io: this[NODE], finalizer });
+  }
+
+  /**
+   * Monadic fold — branches on both success and error channels, where each arm
+   * returns a new IO. Unlike `fold` (which is terminal and returns a plain value),
+   * `foldM` produces a composable IO that can be further chained.
+   *
+   * @template F The error type of the resulting IO.
+   * @template B The success type of the resulting IO.
+   * @param {(e: E) => IO<F, B>} onErr Handler for the error case.
+   * @param {(a: A) => IO<F, B>} onOk Handler for the success case.
+   * @returns {IO<F, B>} A new IO representing the branched computation.
+   *
+   * @example
+   * const io = IO.lift(() => riskyOp()).foldM(
+   *   err => IO.fail(`Recovered: ${err}`),
+   *   val => IO.pure(val * 2)
+   * );
+   */
+  foldM<F, B>(onErr: (e: E) => IO<F, B>, onOk: (a: A) => IO<F, B>): IO<F, B> {
+    return IO.wrap({ tag: "FoldM", io: this[NODE], onOk, onErr });
+  }
+
+  /**
+   * Executes the computation described by this IO and returns the result.
+   * The interpreter walks the ADT tree using an explicit stack (trampoline),
+   * ensuring stack safety for arbitrarily deep chains.
+   *
+   * @returns {Promise<Err<E> | Ok<A>>} The result of the computation.
+   *
+   * @example
+   * const result = await IO.lift(() => 42).unsafeRun();
+   * // result: { type: "Ok", value: 42 }
+   */
+  async unsafeRun(): Promise<Err<E> | Ok<A>> {
+    return interpret(this[NODE]) as Promise<Ok<A> | Err<E>>;
+  }
+
+  /**
+   * Executes the IO and folds both outcomes (success and error) into a single type.
+   * This is a terminal operation — it runs the computation and returns a plain value.
+   *
+   * @template B The result type after folding.
+   * @param {(e: E) => B} onErr Handler for the error case.
+   * @param {(a: A) => B} onOk Handler for the success case.
+   * @returns {Promise<B>} The folded result.
+   *
+   * @example
+   * const message = await IO.lift(() => 42).fold(
+   *   err => `Failed: ${err}`,
+   *   val => `Got: ${val}`
+   * );
+   * // message: "Got: 42"
+   */
+  async fold<B>(onErr: (e: E) => B, onOk: (a: A) => B): Promise<B> {
+    const result = await this.unsafeRun();
+    return result.type === "Ok" ? onOk(result.value) : onErr(result.error);
+  }
+
+  /**
+   * Executes the IO and returns the success value, or `null` if the computation fails.
+   *
+   * Note: if `A` itself can be `null`, the return value is ambiguous — a `null` result
+   * could mean either "succeeded with null" or "failed." Use `unsafeRun()` or `fold`
+   * when the distinction matters.
+   *
+   * @returns {Promise<A | null>} The success value or null.
+   *
+   * @example
+   * const value = await IO.lift(() => 42).getOrNull(); // 42
+   * const nope = await IO.fail("err").getOrNull();    // null
+   */
+  async getOrNull(): Promise<A | null> {
+    const result = await this.unsafeRun();
+    return result.type === "Ok" ? result.value : null;
+  }
+
+  /**
+   * Executes the IO and returns the success value, or evaluates the provided
+   * default function on error. The default is lazy to avoid unnecessary computation.
+   *
+   * @param {() => A} defaultValue A function that produces the fallback value.
+   * @returns {Promise<A>} The success value or the default.
+   *
+   * @example
+   * const value = await IO.fail("err").getOrElse(() => 0); // 0
+   */
+  async getOrElse(defaultValue: () => A): Promise<A> {
+    const result = await this.unsafeRun();
+    return result.type === "Ok" ? result.value : defaultValue();
+  }
+
+  /**
+   * Executes the IO and returns the success value, or applies the handler
+   * function to the error to produce a fallback value.
+   *
+   * @param {(error: E) => A} handler A function that transforms the error into a success value.
+   * @returns {Promise<A>} The success value or the handled error.
+   *
+   * @example
+   * const value = await IO.fail(new Error("boom"))
+   *   .getOrHandleErr(e => `Handled: ${e.message}`);
+   * // value: "Handled: boom"
+   */
+  async getOrHandleErr(handler: (error: E) => A): Promise<A> {
+    const result = await this.unsafeRun();
+    return result.type === "Ok" ? result.value : handler(result.error);
+  }
+
+  /**
+   * Retries this IO when the condition is met, using the given scheduling policy.
+   * The operation is retried with increasing delay based on the policy's factor and jitter settings.
+   *
+   * If the operation exceeds the retry limit, a `RetryError` is thrown.
+   * If the condition is not met, a `ConditionalRetryError` is thrown.
+   * Both are transformed through `liftE` into the error type `E`.
+   *
+   * @param {(error: E) => boolean} condition Predicate on the error — retry only when this returns true.
+   * @param {(error: Error) => E} liftE Transforms schedule errors (e.g. RetryError, TimeoutError) into E.
+   * @param {Policy} [policy] Scheduling policy (defaults to 3 retries, 1.2x backoff, 1s delay).
+   * @returns {IO<E, A>} A new IO that wraps the retry logic.
+   *
+   * @example
+   * const io = IO.lift(() => fetchData())
+   *   .retryIf(
+   *     err => err instanceof NetworkError,
+   *     e => new AppError(e.message),
+   *     { recurs: 5, delay: 1000, factor: 2 }
+   *   );
+   */
+  retryIf(condition: (error: E) => boolean, liftE: (error: Error) => E, policy: Policy = defaultPolicy()): IO<E, A> {
+    return IO.lift<E, Schedule>(
+      () => new Schedule(policy),
+      (e: unknown) => liftE(e instanceof Error ? e : new Error(String(e)))
+    ).flatMap((scheduler) => scheduler.retryIf(this, condition, liftE));
+  }
+
+  /**
+   * Starts this IO as a background computation, returning a `Fiber` handle.
+   * The fiber can be joined (await result) or cancelled.
+   *
+   * `fork()` returns `IO<never, Fiber<E, A>>` — it is lazy and composable.
+   * The computation only starts when the outer IO is executed.
+   *
+   * @returns {IO<never, Fiber<E, A>>} An IO that, when executed, starts this IO and returns a Fiber.
+   *
+   * @example
+   * const io = IO.Do<AppError, string>(async bind => {
+   *   const fiber = await bind(longRunningTask.fork());
+   *   // ... do other work ...
+   *   const result = await fiber.join();
+   *   return result;
    * });
+   */
+  fork(): IO<never, Fiber<E, A>> {
+    const node = this[NODE];
+    return IO.lift(() => {
+      const controller = new AbortController();
+      const promise = interpret(node, controller.signal);
+      return {
+        join: () => promise,
+        cancel: async () => {
+          controller.abort();
+          await promise.catch(() => {});
+        },
+        signal: controller.signal,
+      } as Fiber<E, A>;
+    });
+  }
+
+  /**
+   * Runs multiple IOs in parallel and combines their results with a function.
+   * All IOs are executed concurrently via `Promise.all`. If any IO fails,
+   * all errors are collected into a `NonEmptyList`.
    *
-   * const result = await IO.race(operation, timeout).runAsync();
+   * Supports heterogeneous error types — each IO may have a different error type `E`,
+   * and the resulting error is the union of all error types.
+   *
+   * The last argument is always the combiner function that receives the success values
+   * in the same order as the IO arguments.
+   *
+   * @example
+   * const io = IO.parMapN(
+   *   IO.lift(() => fetchUser()),
+   *   IO.lift(() => fetchOrders()),
+   *   (user, orders) => ({ user, orders })
+   * );
+   */
+  static parMapN<E1, E2, A1, A2, R>(
+    io1: IO<E1, A1>,
+    io2: IO<E2, A2>,
+    f: (a1: A1, a2: A2) => R
+  ): IO<NonEmptyList<E1 | E2>, R>;
+  static parMapN<E1, E2, E3, A1, A2, A3, R>(
+    io1: IO<E1, A1>,
+    io2: IO<E2, A2>,
+    io3: IO<E3, A3>,
+    f: (a1: A1, a2: A2, a3: A3) => R
+  ): IO<NonEmptyList<E1 | E2 | E3>, R>;
+  static parMapN<E1, E2, E3, E4, A1, A2, A3, A4, R>(
+    io1: IO<E1, A1>,
+    io2: IO<E2, A2>,
+    io3: IO<E3, A3>,
+    io4: IO<E4, A4>,
+    f: (a1: A1, a2: A2, a3: A3, a4: A4) => R
+  ): IO<NonEmptyList<E1 | E2 | E3 | E4>, R>;
+  static parMapN<E1, E2, E3, E4, E5, A1, A2, A3, A4, A5, R>(
+    io1: IO<E1, A1>,
+    io2: IO<E2, A2>,
+    io3: IO<E3, A3>,
+    io4: IO<E4, A4>,
+    io5: IO<E5, A5>,
+    f: (a1: A1, a2: A2, a3: A3, a4: A4, a5: A5) => R
+  ): IO<NonEmptyList<E1 | E2 | E3 | E4 | E5>, R>;
+  static parMapN<E1, E2, E3, E4, E5, E6, A1, A2, A3, A4, A5, A6, R>(
+    io1: IO<E1, A1>,
+    io2: IO<E2, A2>,
+    io3: IO<E3, A3>,
+    io4: IO<E4, A4>,
+    io5: IO<E5, A5>,
+    io6: IO<E6, A6>,
+    f: (a1: A1, a2: A2, a3: A3, a4: A4, a5: A5, a6: A6) => R
+  ): IO<NonEmptyList<E1 | E2 | E3 | E4 | E5 | E6>, R>;
+  static parMapN(...ops: any[]): IO<NonEmptyList<any>, any> {
+    if (ops.length < 3) {
+      throw new Error("IO.parMapN requires at least two IO arguments and a combiner function");
+    }
+    const input = ops.slice(0, -1) as IO<any, any>[];
+    const combiner = ops[ops.length - 1] as (...args: any[]) => any;
+
+    return IO.lift<NonEmptyList<any>, any>(
+      async (signal?: AbortSignal) => {
+        const results = await Promise.all(input.map((io) => interpret(io[NODE], signal)));
+
+        // If any cancelled, propagate cancellation
+        if (results.some((r) => r.type === "Cancelled")) {
+          ioCancelled();
+        }
+
+        const errors = results.filter((r): r is Err<any> => r.type === "Err").map((r) => r.error);
+
+        if (errors.length > 0) {
+          throw ioEscape(NonEmptyList.fromArray(errors));
+        }
+
+        const values = results.filter((r): r is Ok<any> => r.type === "Ok").map((r) => r.value);
+
+        return combiner(...values);
+      },
+      (e: unknown) => {
+        if (isIOEscape(e)) return e.error as NonEmptyList<any>;
+        return NonEmptyList.fromArray([e]);
+      }
+    );
+  }
+
+  /**
+   * Races multiple IOs concurrently, returning the result of the first one to succeed.
+   * If all IOs fail, returns a `NonEmptyList` of all errors in the order they were provided.
+   *
+   * This is useful for implementing fallback strategies where you want the fastest
+   * successful response from multiple sources.
+   *
+   * @template E The error type of the individual IOs.
+   * @template A The success type (must be the same for all IOs).
+   * @param {...IO<E, A>} ops The IO operations to race.
+   * @returns {IO<NonEmptyList<E>, A>} An IO that succeeds with the first result or fails with all errors.
+   *
+   * @example
+   * const io = IO.race(
+   *   IO.lift(() => fetchFromPrimary()),
+   *   IO.lift(() => fetchFromFallback()),
+   * );
    */
   static race<E, A>(...ops: IO<E, A>[]): IO<NonEmptyList<E>, A> {
     if (ops.length === 0) {
-      return IO.failed(NonEmptyList.fromArray([{} as E]));
+      throw new Error("IO.race requires at least one IO argument");
     }
 
-    return new IO(async () => {
-      const promises = ops.map((io) => {
-        if (!io._effect) {
-          io._compose();
-        }
-        return io._effect!(undefined);
-      });
-
-      return new Promise<Err<NonEmptyList<E>> | Ok<A>>((resolve) => {
-        let completed = 0;
-        let settled = false;
-        const errors: E[] = [];
-
-        promises.forEach((promise, index) => {
-          promise
-            .then((result) => {
-              if (settled) return;
-
-              if (IO.isOk(result)) {
-                settled = true;
-                resolve(result);
-              } else {
-                errors[index] = result.error;
-                completed++;
-
-                if (completed === promises.length) {
-                  settled = true;
-                  resolve(IO.err(NonEmptyList.fromArray(errors)));
-                }
-              }
-            })
-            .catch((error) => {
-              if (settled) return;
-
-              errors[index] = error as E;
-              completed++;
-
-              if (completed === promises.length) {
-                settled = true;
-                resolve(IO.err(NonEmptyList.fromArray(errors)));
-              }
-            });
-        });
-      });
-    });
-  }
-
-  /**
-   * Provides a mechanism for recovering from errors in this `IO` operation by applying a provided
-   * function that transforms an error of type `E` into a new `IO` operation. This new operation can
-   * either correct the error and return a result of type `A` (or a subtype `B` of `A`), or it can
-   * return another error of type `E`. If the original `IO` operation succeeds, its result is propagated
-   * unchanged.
-   *
-   * The `recover` method allows for the implementation of sophisticated error recovery strategies,
-   * where an error in one operation can trigger another operation as an attempt to correct or handle
-   * the failure. This method is crucial for creating resilient asynchronous workflows that can adapt
-   * to and recover from unexpected conditions.
-   *
-   * Note: The recovery function should be used judiciously to ensure that it does not inadvertently
-   * swallow or obscure errors. It is typically used in scenarios where there is a clear recovery path
-   * or an alternative operation that can be attempted in case of failure.
-   *
-   * @template E The type of the error that the operation may produce and that the recovery function
-   * deals with.
-   * @template A The type of the result that the operation yields upon success.
-   * @template B A subtype of `A` that the recovery operation can return, allowing for recovery
-   * operations that return a specific subtype of the original success type.
-   * @param {function(error: E): IO<E, B>} f A recovery function that takes the error of the failed
-   * operation as input and returns a new `IO` instance representing an attempt to recover from that
-   * error. This new `IO` operation can either yield a successful result of type `B` (a subtype of `A`)
-   * or another error of type `E`.
-   * @returns {IO<E, A>} An `IO` instance that represents the original operation with an added recovery
-   * path. If the original operation fails, the provided function is used to attempt recovery. If the
-   * original operation succeeds, or if the recovery operation also succeeds, the result is of type `A`.
-   * If the recovery operation fails, the resulting `IO` instance will contain the new error of type `E`.
-   */
-  recover = <B extends A>(f: (error: E) => IO<E, B>): IO<E, A> => {
-    const effect = new IO<E, A>();
-    effect._operations = [
-      ...this._operations,
-      async (prev: Err<E> | Ok<A>): Promise<Err<E> | Ok<A>> => {
-        if (IO.isErr(prev)) {
-          const rec = f(prev.error);
-          let res: Err<E> | Ok<B> = prev;
-          for (const operation of rec._operations) {
-            res = await operation(res);
-            if (IO.isErr(res)) {
-              break;
+    return IO.lift<NonEmptyList<E>, A>(
+      (signal?: AbortSignal) => {
+        return new Promise<A>((resolve, reject) => {
+          const controller = new AbortController();
+          // Link parent signal if present
+          if (signal) {
+            if (signal.aborted) {
+              controller.abort();
+            } else {
+              signal.addEventListener("abort", () => controller.abort(), { once: true });
             }
           }
-          return res as Err<E> | Ok<A>;
-        }
-        return prev;
-      },
-    ];
-    return effect;
-  };
 
-  /**
-   * Applies a given side effect function to the successful result of this `IO` operation, without
-   * altering the result. This method is primarily used for executing side effects such as logging,
-   * metrics collection, or other operations that should not modify the main result of the `IO`
-   * operation.
-   *
-   * The `tap` method is useful for scenarios where you need to perform operations based on the
-   * success value of the `IO` instance, but you want to ensure that these operations do not interfere
-   * with the original workflow. It allows for the injection of side effects in a controlled manner,
-   * ensuring that the integrity of the main computation is preserved.
-   *
-   * @template E The type of the error that the operation may produce.
-   * @template A The type of the result that the operation yields upon success.
-   * @param {function(a: A): void} f A side-effect function that takes the successful result of the
-   * current `IO` operation as input. This function should not return a value, and any return value
-   * will be ignored.
-   * @returns {IO<E, A>} The same `IO` instance, allowing for method chaining. The successful result
-   * is passed through unchanged, ensuring that the primary workflow continues as intended.
-   */
-  tap = (f: (a: A) => void): IO<E, A> => {
-    const effect = new IO<E, A>();
-    effect._operations = [
-      ...this._operations,
-      async (prev: Err<E> | Ok<A>): Promise<Err<E> | Ok<A>> => {
-        if (IO.isOk(prev)) {
-          f(prev.value);
-        }
-        return prev;
-      },
-    ];
-    return effect;
-  };
+          let completed = 0;
+          let settled = false;
+          const errors: E[] = [];
 
-  /**
-   * Applies a given side effect function to the error of this `IO` operation, if it fails, without
-   * altering the outcome. This method is useful for executing side effects such as logging errors,
-   * metrics collection related to failures, or other operations that should occur in response to an
-   * error but should not modify the error itself or the flow of the operation.
-   *
-   * The `tapError` method allows for the integration of side effects specifically related to error
-   * handling, providing a mechanism to observe and respond to errors without interfering with the
-   * original error handling and propagation logic of the `IO` monad. It ensures that while side effects
-   * can be performed in response to an error, the integrity and flow of error handling remains intact.
-   *
-   * @template E The type of the error that the operation may produce.
-   * @template A The type of the result that the operation yields upon success.
-   * @param {function(error: E): void} f A side effect function that takes the error produced by the
-   * failed operation as input. This function should not return a value, and any return value will be
-   * ignored.
-   * @returns {IO<E, A>} The same `IO` instance, allowing for method chaining. The error is passed
-   * through unchanged if the operation fails, ensuring that the primary error handling flow continues
-   * as intended.
-   */
-  tapError(f: (error: E) => void): IO<E, A> {
-    const effect = new IO<E, A>();
-    effect._operations = [
-      ...this._operations,
-      async (prev: Err<E> | Ok<A>): Promise<Err<E> | Ok<A>> => {
-        if (IO.isErr(prev)) {
-          f(prev.error);
-        }
-        return prev;
+          ops.forEach((io, index) => {
+            interpret(io[NODE], controller.signal).then((result) => {
+              if (settled) return;
+              if (result.type === "Ok") {
+                settled = true;
+                controller.abort(); // Cancel losers
+                resolve(result.value);
+              } else if (result.type === "Err") {
+                errors[index] = result.error;
+                completed++;
+                if (completed === ops.length) {
+                  settled = true;
+                  reject(ioEscape(NonEmptyList.fromArray(errors)));
+                }
+              } else {
+                // Cancelled — don't count, don't resolve
+                completed++;
+                if (completed === ops.length && !settled) {
+                  settled = true;
+                  // All cancelled — treat as cancellation propagation
+                  reject(ioEscape(NonEmptyList.fromArray(errors.length > 0 ? errors : ["Cancelled" as unknown as E])));
+                }
+              }
+            });
+          });
+        });
       },
-    ];
-    return effect;
+      (e: unknown) => {
+        if (isIOEscape(e)) return e.error as NonEmptyList<E>;
+        return NonEmptyList.fromArray([e as E]);
+      }
+    );
   }
 
   /**
-   * Handles errors within this `IO` operation by applying a provided error handler function, which
-   * can transform the error or perform recovery actions. This method is designed to manage both
-   * errors encapsulated in an `Err<E>` result and exceptions thrown during the execution of the
-   * operation. If the operation succeeds without throwing an exception, its result is returned
-   * unchanged.
+   * Monadic do-notation. Sequences IO operations using an imperative-style
+   * `bind` function that unwraps IO values or short-circuits on the first error.
    *
-   * This comprehensive error handling mechanism allows for robust and flexible error management
-   * strategies within the `IO` monad, enabling operations to recover from errors or transform them
-   * as needed, while also ensuring that unexpected exceptions are caught and handled in a consistent
-   * manner.
+   * Inside the `operation` callback, call `bind(io)` to execute an IO and extract its
+   * success value. If any bound IO fails, the entire `Do` short-circuits with that error —
+   * subsequent `bind` calls are not executed.
    *
-   * @template E The type of the error that the operation may produce.
-   * @template F The type of the error returned by the handler function.
-   * @template A The type of the result that the operation yields upon success.
-   * @param {function(error: E): F} handle An error handler function that takes the error of the failed
-   * operation or the caught exception as input and returns a new error of type `F`. This transformed
-   * or recovered error will be encapsulated in the returned `IO` instance if the original operation
-   * fails or an exception is caught.
-   * @returns {IO<F, A>} A new `IO` instance representing the operation with its error handled by the
-   * provided function. If the original operation or the catch block throws an exception, the new
-   * instance will encapsulate the error returned by the error handler function. If the original
-   * operation succeeds, the new instance will encapsulate the original result.
+   * Uses an `IOEscape` sentinel internally to preserve the typed error `E` through
+   * JavaScript's throw/catch mechanism, ensuring the error channel remains type-safe.
+   *
+   * When `liftE` is provided, non-IO exceptions thrown inside the operation block
+   * (e.g. programming errors, unexpected throws) are transformed into the error type `E`
+   * via `liftE`, closing the type hole. Without `liftE`, such exceptions pass through
+   * untyped — use with care.
+   *
+   * @template E The error type shared by all bound IO operations.
+   * @template A The final success type produced by the comprehension.
+   * @param {(bind: <B>(effect: IO<E, B>) => Promise<B>) => Promise<A>} operation
+   *   An async function that receives a `bind` callback for unwrapping IO values.
+   * @param {(e: unknown) => E} [liftE] Optional function to transform non-IO exceptions into E.
+   * @returns {IO<E, A>} An IO that, when executed, runs the comprehension.
+   *
+   * @example
+   * const io = IO.Do<AppError, number>(async bind => {
+   *   const user = await bind(fetchUser(userId));
+   *   const orders = await bind(fetchOrders(user.id));
+   *   return orders.length;
+   * });
    */
-  handleErrorWith<F>(handle: (error: E | unknown) => F): IO<F, A> {
-    const effect = new IO<F, A>();
-    effect._operations = this._operations.map((op) => async (prev: Err<E> | Ok<A>): Promise<Err<F> | Ok<A>> => {
-      try {
-        const result = await op(prev);
-        if (IO.isErr(result)) {
-          return IO.err(handle(result.error));
-        }
-        return result;
-      } catch (error: any) {
-        return IO.err(handle(error));
+  static Do<E, A>(
+    operation: (bind: <B>(effect: IO<E, B>) => Promise<B>) => Promise<A>,
+    liftE?: (e: unknown) => E
+  ): IO<E, A> {
+    const userLiftE = liftE;
+    return IO.lift<E, A>(
+      async (signal?: AbortSignal) => {
+        const bind = async <B>(eff: IO<E, B>): Promise<B> => {
+          const result = await interpret(eff[NODE], signal);
+          if (result.type === "Ok") {
+            return result.value;
+          }
+          if (result.type === "Cancelled") {
+            ioCancelled(); // throws
+          }
+          throw ioEscape(result.error);
+        };
+        return await operation(bind);
+      },
+      (e: unknown): E => {
+        if (isIOCancelled(e)) throw e; // re-throw, don't process through liftE
+        if (isIOEscape(e)) return e.error as E;
+        if (userLiftE) return userLiftE(e);
+        return e as E;
       }
+    );
+  }
+
+  /**
+   * Sequentially executes a function over each item, collecting results into an array.
+   * Fail-fast: if any invocation fails, the remaining items are not processed and the
+   * error is returned immediately.
+   *
+   * @template E The error type.
+   * @template A The input item type.
+   * @template B The output type for each item.
+   * @param {A[]} items The items to traverse.
+   * @param {(a: A) => IO<E, B>} f A function that produces an IO for each item.
+   * @returns {IO<E, B[]>} An IO that succeeds with all results or fails with the first error.
+   *
+   * @example
+   * const io = IO.traverse([1, 2, 3], n => IO.lift(() => n * 2));
+   * // result: { type: "Ok", value: [2, 4, 6] }
+   */
+  static traverse<E, A, B>(items: A[], f: (a: A) => IO<E, B>): IO<E, B[]> {
+    return IO.Do<E, B[]>(async (bind) => {
+      const results: B[] = [];
+      for (const item of items) {
+        results.push(await bind(f(item)));
+      }
+      return results;
     });
-    return effect;
   }
 
   /**
-   * @experimental
-   * Performs a monadic bind over a sequence of IO operations encapsulated in an `IO` monad.
-   * This function abstracts the complexity of chaining and error management of IO operations,
-   * allowing for a declarative style of programming. This method is experimental and may
-   * change in future releases.
+   * Executes a function over each item in parallel, collecting all results or all errors.
+   * Unlike `traverse`, all items are processed concurrently. If any fail, all errors
+   * are collected into a `NonEmptyList`.
    *
-   * @template E - The error type that can be returned in case of failure.
-   * @template A - The result type of the successful execution of the `operation`.
-   * @param {function(bind: <B>(effect: IO<E, B>) => Promise<B>): Promise<A>} operation -
-   *        A function that takes a `bind` function and returns a `Promise`. The `bind` function
-   *        is used to execute `IO` operations sequentially. `operation` should utilize `bind`
-   *        to chain together several `IO` operations and compute a final result based on their
-   *        successful execution.
-   * @returns {IO<E, A>} An IO that resolves to either an error `E`,
-   *          if any of the IO operations fail, or a success with value `A`, if all operations
-   *          complete successfully. The method ensures that all started operations are completed
-   *          before it resolves.
+   * @template E The error type.
+   * @template A The input item type.
+   * @template B The output type for each item.
+   * @param {A[]} items The items to traverse in parallel.
+   * @param {(a: A) => IO<E, B>} f A function that produces an IO for each item.
+   * @returns {IO<NonEmptyList<E>, B[]>} An IO that succeeds with all results or fails with all errors.
    *
    * @example
-   * const sum = IO.forM(async bind => {
-   *   const one = await bind(IO.ofSync(() => 1));
-   *   const two = await bind(IO.ofSync(() => 2));
-   *   const three = await bind(IO.ofSync(() => 3));
-   *   return one + two + three;
-   * });
+   * const io = IO.parTraverse([1, 2, 3], n => IO.lift(() => n * 2));
+   * // result: { type: "Ok", value: [2, 4, 6] }
    */
-  static forM<E, A>(operation: (bind: <B>(effect: IO<E, B>) => Promise<B>) => Promise<A>): IO<E, A> {
-    const bind = async <B>(eff: IO<E, B>): Promise<B> => {
-      const result = await eff.runAsync();
-      if (IO.isOk(result)) {
-        return result.value;
-      } else {
-        throw result.error;
+  static parTraverse<E, A, B>(items: A[], f: (a: A) => IO<E, B>): IO<NonEmptyList<E>, B[]> {
+    return IO.lift<NonEmptyList<E>, B[]>(
+      async (signal?: AbortSignal) => {
+        const results = await Promise.all(items.map((item) => interpret(f(item)[NODE], signal)));
+
+        // If any cancelled, propagate cancellation
+        if (results.some((r) => r.type === "Cancelled")) {
+          ioCancelled();
+        }
+
+        const errors = results.filter((r): r is Err<E> => r.type === "Err").map((r) => r.error);
+
+        if (errors.length > 0) {
+          throw ioEscape(NonEmptyList.fromArray(errors));
+        }
+
+        return results.filter((r): r is Ok<B> => r.type === "Ok").map((r) => r.value);
+      },
+      (e: unknown) => {
+        if (isIOEscape(e)) return e.error as NonEmptyList<E>;
+        return NonEmptyList.fromArray([e as E]);
       }
-    };
-    return IO.of(async () => await operation(bind));
+    );
   }
 
   /**
-   * Executes the encapsulated effect and applies one of two provided functions based on the outcome:
-   * one if the operation fails and another if it succeeds. This method is a way to consolidate handling
-   * of both successful and failed outcomes into a single operation, with each outcome being transformed
-   * into a common type `B`. The `fold` method is especially useful in scenarios where you want to
-   * normalize the result of the `IO` operation to a single type, regardless of success or failure.
+   * Sequentially executes an array of IOs, collecting results into an array.
+   * Equivalent to `traverse(ios, x => x)`. Fail-fast on the first error.
    *
-   * This approach allows for a clear separation of success and error handling logic while still
-   * enabling them to converge on a single result type. It's particularly beneficial in contexts where
-   * the distinction between success and failure is handled uniformly or when integrating `IO` operations
-   * into systems that do not distinguish between these outcomes.
-   *
-   * @template E The type of the error that may be produced by the operation if it fails.
-   * @template A The type of the result that may be produced by the operation upon success.
-   * @template B The common return type into which both success and failure results are transformed.
-   * @param {function(e: E): B} onError A function to be applied if the operation fails, transforming
-   * the error into a value of type `B`.
-   * @param {function(a: A): B} onSuccess A function to be applied if the operation succeeds, transforming
-   * the result into a value of type `B`.
-   * @returns {Promise<B>} A Promise that resolves to the result of applying the appropriate transformation
-   * function based on the outcome of the `IO` operation. This provides a unified type `B` as the final
-   * result, abstracting over the success/failure dichotomy.
-   */
-  fold = async <B>(onError: (e: E) => B, onSuccess: (a: A) => B): Promise<B> => {
-    const result = await this.runAsync();
-    if (IO.isOk(result)) {
-      return onSuccess(result.value);
-    } else {
-      return onError(result.error);
-    }
-  };
-
-  /**
-   * Asynchronously executes the encapsulated effect and returns a Promise that resolves with the
-   * operation's result if successful, or `null` if the operation fails or yields an undefined result.
-   * This method provides a way to execute the `IO` operation and access its result directly, with a
-   * simplified error handling mechanism that converts all failure cases to `null`.
-   *
-   * The `getOrNull` method is useful when the precise details of the failure are not needed, and the
-   * presence or absence of a result is sufficient to determine the next steps in the application logic.
-   * It simplifies handling operations where a missing or undefined result can be treated the same as
-   * an error, allowing for straightforward integration into workflows that prefer nullability over
-   * explicit error handling.
-   *
-   * @template E The type of the error that may be produced by the operation if it fails.
-   * @template A The type of the result that may be produced by the operation upon success.
-   * @returns {Promise<A | null>} A Promise that, when resolved, yields the successful result of the
-   * operation, or `null` if the operation failed or produced an undefined result. This approach
-   * streamlines error handling by treating all errors and undefined results uniformly as `null`.
-   */
-  getOrNull = async (): Promise<A | null> =>
-    this.fold(
-      () => null,
-      (a) => a
-    );
-
-  /**
-   * Asynchronously executes the encapsulated effect and returns a Promise that resolves with the
-   * operation's result if successful, or the provided default value if the operation fails.
-   *
-   * This default value can be either a constant or a function that returns a value of type `A`.
+   * @template E The error type.
+   * @template A The success type of each IO.
+   * @param {IO<E, A>[]} ios The IO operations to sequence.
+   * @returns {IO<E, A[]>} An IO that succeeds with all results or fails with the first error.
    *
    * @example
-   * getOrElse(() => 5);
-   *
-   * @template A The type of the result that may be produced by the operation upon success.
-   * @param {A | (() => A)} defaultValue The default value to be returned if the operation fails.
-   * @returns {Promise<A>} A Promise that, when resolved, yields the successful result of the operation, or the provided default value if the operation fails.
+   * const io = IO.sequence([IO.lift(() => 1), IO.lift(() => 2), IO.lift(() => 3)]);
+   * // result: { type: "Ok", value: [1, 2, 3] }
    */
-  getOrElse = (defaultValue: () => A): Promise<A> =>
-    this.fold(
-      () => defaultValue(),
-      (a) => a
-    );
+  static sequence<E, A>(ios: IO<E, A>[]): IO<E, A[]> {
+    return IO.traverse(ios, (io) => io);
+  }
 
   /**
-   * Asynchronously executes the encapsulated effect and returns a Promise that resolves with the
-   * operation's result if successful, or invokes the provided handler function if the operation fails.
+   * Executes an array of IOs in parallel, collecting all results or all errors.
+   * Equivalent to `parTraverse(ios, x => x)`.
    *
-   * This handler function is supposed to handle the error scenario and return an appropriate value
-   * of type `A` that can be used in its place.
+   * @template E The error type.
+   * @template A The success type of each IO.
+   * @param {IO<E, A>[]} ios The IO operations to execute in parallel.
+   * @returns {IO<NonEmptyList<E>, A[]>} An IO that succeeds with all results or fails with all errors.
    *
-   * @example  Usage with a handler function:
-   * getOrHandle(error => {
-   *   console.log(error);
-   *   return defaultA;
-   * });
-   *
-   * @template E The type of the error that may be produced by the operation if it fails.
-   * @template A The type of the result that may be produced by the operation upon success.
-   * @param {(error: E) => A} handler The handler function to be invoked if the operation fails.
-   * @returns {Promise<A>} A Promise that, when resolved, yields the successful result of the operation,
-   * or the return value of the provided handler function if the operation failed.
+   * @example
+   * const io = IO.parSequence([IO.lift(() => 1), IO.lift(() => 2), IO.lift(() => 3)]);
+   * // result: { type: "Ok", value: [1, 2, 3] }
    */
-  getOrHandle = async (handler: (error: E) => A): Promise<A> => {
-    return this.fold(handler, (v) => v);
-  };
-
-  /**
-   * Executes the encapsulated asynchronous effect and returns a Promise that resolves with the outcome
-   * of the operation. This method triggers the execution of the operation represented by this `IO`
-   * instance, which can result in either a successful outcome encapsulated in an `Ok<A>`, or a failure
-   * outcome encapsulated in an `Err<E>`.
-   *
-   * The `runAsync` method is the point at which the deferred computation encapsulated by the `IO` monad
-   * is actually performed. Until this method is called, the `IO` operation remains a description of an
-   * asynchronous effect without being executed. This design allows for the construction of complex
-   * asynchronous workflows that are executed only when their effects are explicitly triggered.
-   *
-   * @template E The type of the error that may be produced by the operation if it fails.
-   * @template A The type of the result that may be produced by the operation upon success.
-   * @returns {Promise<Err<E> | Ok<A>>} A Promise that resolves with the outcome of the asynchronous
-   * effect. The Promise resolves to an `Err<E>` if the operation fails, encapsulating the error
-   * associated with the failure. If the operation succeeds, the Promise resolves to an `Ok<A>`,
-   * encapsulating the successful result.
-   */
-  runAsync = async (): Promise<Err<E> | Ok<A>> => {
-    if (!this._effect) {
-      this._compose();
-    }
-    return this._effect!(undefined);
-  };
-
-  private _compose(): void {
-    this._effect = async (input) => {
-      let result: Err<E> | Ok<any> = { type: "Ok", value: input };
-      for (const op of this._operations) {
-        result = await op(result);
-      }
-      return result as Err<E> | Ok<A>;
-    };
+  static parSequence<E, A>(ios: IO<E, A>[]): IO<NonEmptyList<E>, A[]> {
+    return IO.parTraverse(ios, (io) => io);
   }
 }

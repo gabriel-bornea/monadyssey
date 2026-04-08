@@ -121,14 +121,14 @@ describe("Reader", () => {
 
       class UserService {
         getById = (id: string): IO<Error, User> =>
-          IO.ofSync(() => {
+          IO.lift(() => {
             return { id: id, username: "username", email: "username@mail.local" };
           });
       }
 
       class DocumentService {
         getByUsername = (username: string): IO<Error, Document> =>
-          IO.ofSync(() => {
+          IO.lift(() => {
             return { name: "document.pdf", createdOn: new Date(), createdBy: username };
           });
       }
@@ -141,7 +141,7 @@ describe("Reader", () => {
       class UserDocumentService {
         getById = (id: string): Reader<Context, IO<Error, Document>> =>
           Reader.ask<Context>().map((ctx) =>
-            IO.forM(async (bind) => {
+            IO.Do(async (bind) => {
               const user = await bind(ctx.userService.getById(id));
               return await bind(ctx.documentService.getByUsername(user.username));
             })
@@ -153,7 +153,7 @@ describe("Reader", () => {
 
       const effect = service.getById("123").run(ctx);
 
-      const result = await effect.runAsync();
+      const result = await effect.unsafeRun();
 
       switch (result.type) {
         case "Ok":
@@ -164,7 +164,7 @@ describe("Reader", () => {
           });
           break;
         case "Err":
-          fail("Spec should not fail");
+          throw new Error("Spec should not fail");
       }
     });
   });

@@ -1,10 +1,16 @@
 module.exports = {
-  preset: "ts-jest",
   testEnvironment: "node",
   testMatch: ["**/test/**/*.(spec|test).[jt]s?(x)"],
   transform: {
-    "^.+\\.ts$": "ts-jest",
-    "^.+\\.tsx$": "ts-jest"
+    "^.+\\.tsx?$": ["@swc/jest", {
+      jsc: {
+        parser: {
+          syntax: "typescript",
+          decorators: true,
+        },
+        target: "es2020",
+      },
+    }],
   },
   coveragePathIgnorePatterns: [
     "simulation.ts",

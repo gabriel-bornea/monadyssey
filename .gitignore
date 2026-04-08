@@ -9,6 +9,7 @@ lerna-debug.log*
 
 node_modules
 dist
+temp
 coverage
 results
 dist-ssr
@@ -19,6 +20,7 @@ test/*.spec.js
 .vscode/*
 !.vscode/extensions.json
 .idea
+.claude
 .DS_Store
 *.suo
 *.ntvs*

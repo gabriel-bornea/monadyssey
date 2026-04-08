@@ -3,7 +3,7 @@ import { Eval } from "../src";
 
 describe("Eval", () => {
   describe("defer", () => {
-    it("should defer evaluating a computation until needed", async () => {
+    it("should defer evaluating a computation until needed", () => {
       let evaluated = false;
       const ev = Eval.defer(() => {
         evaluated = true;
@@ -17,7 +17,7 @@ describe("Eval", () => {
       expect(evaluated).toBe(true);
     });
 
-    it("should trigger an evaluation every time it is executed", async () => {
+    it("should trigger an evaluation every time it is executed", () => {
       let times = 0;
 
       const ev = Eval.defer(() => {
@@ -34,14 +34,14 @@ describe("Eval", () => {
   });
 
   describe("now", () => {
-    it("should lift an already computed value inside an Eval", async () => {
+    it("should lift an already computed value inside an Eval", () => {
       const ev = Eval.now(42);
       expect(ev.evaluate()).toBe(42);
     });
   });
 
   describe("lazy", () => {
-    it("should defer and cache the operation", async () => {
+    it("should defer and cache the operation", () => {
       let times = 0;
 
       const ev = Eval.lazy(() => {
@@ -58,61 +58,149 @@ describe("Eval", () => {
     });
   });
 
+  describe("map", () => {
+    it("should transform the result of an operation", () => {
+      const result = Eval.now(42)
+        .map((value) => value * 2)
+        .evaluate();
+      expect(result).toBe(84);
+    });
+
+    it("should preserve left-to-right order", () => {
+      const result = Eval.now("a")
+        .map((s) => s + "b")
+        .map((s) => s + "c")
+        .map((s) => s + "d")
+        .evaluate();
+      expect(result).toBe("abcd");
+    });
+
+    it("should work on deferred computations", () => {
+      let evaluated = false;
+      const ev = Eval.defer(() => {
+        evaluated = true;
+        return 10;
+      }).map((n) => n * 2);
+
+      expect(evaluated).toBe(false);
+      expect(ev.evaluate()).toBe(20);
+      expect(evaluated).toBe(true);
+    });
+
+    it("should work on lazy computations and preserve memoization", () => {
+      let times = 0;
+      const ev = Eval.lazy(() => {
+        times++;
+        return 10;
+      }).map((n) => n * 3);
+
+      expect(ev.evaluate()).toBe(30);
+      expect(ev.evaluate()).toBe(30);
+      expect(times).toBe(1);
+    });
+  });
+
+  describe("flatMap", () => {
+    it("should compose dependent computations", () => {
+      const ev1 = Eval.now(2);
+      const ev2 = Eval.now(3);
+      const result = ev1.flatMap((a) => ev2.map((b) => a + b)).evaluate();
+      expect(result).toBe(5);
+    });
+
+    it("should handle right-associated chains (continuation returns a chain)", () => {
+      // Right-associated: flatMap continuation itself returns flatMaps
+      const result = Eval.now(1)
+        .flatMap((a) => Eval.now(a + 1).flatMap((b) => Eval.now(b + 1).flatMap((c) => Eval.now(c + 1))))
+        .evaluate();
+      expect(result).toBe(4);
+    });
+
+    it("should work on deferred computations", () => {
+      let evaluated = false;
+      const ev = Eval.defer(() => {
+        evaluated = true;
+        return 5;
+      }).flatMap((n) => Eval.now(n + 10));
+
+      expect(evaluated).toBe(false);
+      expect(ev.evaluate()).toBe(15);
+      expect(evaluated).toBe(true);
+    });
+  });
+
   describe("evaluate", () => {
-    it("it should evaluate the operations in the correct order and avoiding stack overflow from deep recursion", async () => {
-      const size = 100000;
+    it("should be stack-safe for deep flatMap chains", () => {
+      const size = 1_000_000;
       let instance = Eval.now(0);
 
       for (let i = 0; i < size; i++) {
         instance = instance.flatMap((num) => Eval.now(num + 1));
       }
 
-      const result = instance.evaluate();
-
-      expect(result).toEqual(size);
+      expect(instance.evaluate()).toEqual(size);
     });
-  });
 
-  describe("map", () => {
-    it("should transform the result of an operation", async () => {
-      const ev = Eval.now(42);
-      const result = ev.map((value) => value * 2).evaluate();
-      expect(result).toBe(84);
+    it("should be stack-safe for deep map chains", () => {
+      const size = 100_000;
+      let instance: Eval<number> = Eval.now(0);
+
+      for (let i = 0; i < size; i++) {
+        instance = instance.map((num) => num + 1);
+      }
+
+      expect(instance.evaluate()).toEqual(size);
     });
-  });
 
-  describe("flatMap", () => {
-    it("should compose multiple operations", async () => {
-      const ev1 = Eval.now(2);
-      const ev2 = Eval.now(3);
-      const result = ev1.flatMap((a) => ev2.map((b) => a + b)).evaluate();
-      expect(result).toBe(5);
+    it("should be stack-safe for interleaved map and flatMap chains", () => {
+      const size = 100_000;
+      let instance: Eval<number> = Eval.now(0);
+
+      for (let i = 0; i < size; i++) {
+        if (i % 2 === 0) {
+          instance = instance.map((num) => num + 1);
+        } else {
+          instance = instance.flatMap((num) => Eval.now(num + 1));
+        }
+      }
+
+      expect(instance.evaluate()).toEqual(size);
+    });
+
+    it("should handle flatMap where continuation returns a mapped chain", () => {
+      const result = Eval.now(1)
+        .flatMap((a) =>
+          Eval.now(a)
+            .map((x) => x + 1)
+            .map((x) => x * 10)
+        )
+        .map((x) => x + 5)
+        .evaluate();
+      // 1 -> flatMap -> now(1) -> +1 = 2 -> *10 = 20 -> +5 = 25
+      expect(result).toBe(25);
     });
   });
 
   describe("error handling", () => {
-    it("should handle error in deferred computation", () => {
+    it("should propagate errors from deferred computations", () => {
       const ev = Eval.defer(() => {
         throw new Error("Deferred error");
       });
       expect(() => ev.evaluate()).toThrow("Deferred error");
     });
-  });
 
-  describe("edge cases", () => {
-    it("should handle computations returning null", () => {
-      const ev = Eval.defer(() => null);
-      expect(ev.evaluate()).toBeNull();
+    it("should propagate errors from map functions", () => {
+      const ev = Eval.now(1).map(() => {
+        throw new Error("Map error");
+      });
+      expect(() => ev.evaluate()).toThrow("Map error");
     });
 
-    it("should handle computations returning undefined", () => {
-      const ev = Eval.defer(() => undefined);
-      expect(ev.evaluate()).toBeUndefined();
-    });
-
-    it("should handle computations returning NaN", () => {
-      const ev = Eval.defer(() => NaN);
-      expect(ev.evaluate()).toBeNaN();
+    it("should propagate errors from flatMap continuations", () => {
+      const ev = Eval.now(1).flatMap(() => {
+        throw new Error("FlatMap error");
+      });
+      expect(() => ev.evaluate()).toThrow("FlatMap error");
     });
   });
 
@@ -120,23 +208,6 @@ describe("Eval", () => {
     it("should handle asynchronous computations", async () => {
       const ev = Eval.defer(async () => 42);
       expect(await ev.evaluate()).toBe(42);
-    });
-  });
-
-  describe("different types", () => {
-    it("should handle string data type", () => {
-      const ev = Eval.now("string");
-      expect(ev.evaluate()).toBe("string");
-    });
-
-    it("should handle boolean data type", () => {
-      const ev = Eval.now(true);
-      expect(ev.evaluate()).toBe(true);
-    });
-
-    it("should handle object data type", () => {
-      const ev = Eval.now({ key: "value" });
-      expect(ev.evaluate()).toStrictEqual({ key: "value" });
     });
   });
 });

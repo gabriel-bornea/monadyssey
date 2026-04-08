@@ -117,7 +117,7 @@ export abstract class Eval<A> {
    * console.log(mappedEval.evaluate()); // Logs 43
    */
   map<B>(f: (a: A) => B): Eval<B> {
-    return new FlatMap(this, (a) => Eval.now(f(a)));
+    return new Map(this, f);
   }
 
   /**
@@ -174,27 +174,46 @@ export abstract class Eval<A> {
   evaluate(): A {
     let current: Eval<A> = this;
     const stack: Array<(a: any) => Eval<A>> = [];
+
     while (true) {
       if (current instanceof FlatMap) {
-        if (current.first instanceof FlatMap) {
+        const inner = current.first;
+        if (inner instanceof FlatMap || inner instanceof Map) {
           stack.push(current.f);
-          current = current.first;
+          current = inner;
         } else {
-          const first = current.first.value();
-          current = current.f(first);
+          current = current.f(inner.value());
+        }
+      } else if (current instanceof Map) {
+        // Collect consecutive Map functions and apply iteratively
+        const maps: Array<(a: any) => any> = [current.f];
+        let inner: Eval<any> = current.first;
+        while (inner instanceof Map) {
+          maps.push(inner.f);
+          inner = inner.first;
+        }
+        const applyMaps = (val: any) => {
+          for (let i = maps.length - 1; i >= 0; i--) {
+            val = maps[i](val);
+          }
+          return val;
+        };
+        if (inner instanceof FlatMap) {
+          stack.push((a) => new Now(applyMaps(a)));
+          current = inner;
+        } else {
+          const result = applyMaps(inner.value());
+          if (stack.length === 0) {
+            return result;
+          }
+          current = stack.pop()!(result);
         }
       } else {
         const result = current.value();
         if (stack.length === 0) {
           return result;
-        } else {
-          const f = stack.pop();
-          if (f) {
-            current = f(result);
-          } else {
-            throw new EvaluationError("Unexpected undefined function in stack.");
-          }
         }
+        current = stack.pop()!(result);
       }
     }
   }
@@ -355,6 +374,27 @@ class FlatMap<A, B> extends Eval<B> {
    */
   value(): B {
     throw new EvaluationError("FlatMap should not be evaluated directly");
+  }
+}
+
+/**
+ * Represents a transformation of a computation's result. Unlike `FlatMap`, the mapping function
+ * returns a plain value rather than an `Eval` instance. Consecutive `Map` nodes are fused into
+ * a single composed function during evaluation, avoiding intermediate allocations and stack growth.
+ *
+ * @template A The type of the value produced by the source computation.
+ * @template B The type of the value after transformation.
+ */
+class Map<A, B> extends Eval<B> {
+  constructor(
+    public readonly first: Eval<A>,
+    public readonly f: (a: A) => B
+  ) {
+    super();
+  }
+
+  value(): B {
+    throw new EvaluationError("Map should not be evaluated directly");
   }
 }
 

@@ -1,66 +1,64 @@
 import { html, perf } from "../conf/simulation";
 import { IO } from "../../src";
 
+const iterations = 10000;
+
 describe("IO simulation", () => {
   afterAll(() => {
     html("IO");
   });
 
-  it("of", () => {
-    perf("of", () => IO.of(() => Promise.resolve(42)));
-  });
-
-  it("ofSync", () => {
-    perf("ofSync", () => IO.ofSync(() => 42));
+  it("lift", () => {
+    perf("lift", () => IO.lift(() => Promise.resolve(42)), iterations);
   });
 
   it("ok", () => {
-    perf("ok", () => IO.ok(42));
+    perf("ok", () => IO.ok(42), iterations);
   });
 
   it("err", () => {
-    perf("err", () => IO.err("Some unexpected error"));
+    perf("err", () => IO.err("Some unexpected error"), iterations);
   });
 
   it("map", () => {
-    perf("map", () => IO.ofSync(() => 42).map((num) => num + 1));
+    perf("map", () => IO.lift(() => 42).map((num) => num + 1), iterations);
   });
 
   it("flatMap", () => {
-    perf("flatMap", () => IO.ofSync(() => 42).flatMap((num) => IO.ofSync(() => num + 1)));
+    perf("flatMap", () => IO.lift(() => 42).flatMap((num) => IO.lift(() => num + 1)), iterations);
   });
 
-  it("parZip", () => {
-    perf("parZip", async () => {
-      const a = IO.ofSync(() => 42);
-      const b = IO.ofSync(() => 20);
-      const c = IO.ofSync(() => 12);
+  it("parMapN", () => {
+    perf("parMapN", async () => {
+      const a = IO.lift(() => 42);
+      const b = IO.lift(() => 20);
+      const c = IO.lift(() => 12);
 
-      const effect = IO.parZip(a, b, c, (f, s, t) => f + s + t);
+      const effect = IO.parMapN(a, b, c, (f, s, t) => f + s + t);
 
-      await effect.runAsync();
-    });
+      await effect.unsafeRun();
+    }, iterations);
   });
 
-  it("runAsync", () => {
-    perf("runAsync", () => {
-      IO.ofSync(() => 42)
-        .flatMap((num) => IO.ofSync(() => num + 1))
-        .runAsync();
-    });
+  it("unsafeRun", () => {
+    perf("unsafeRun", () => {
+      IO.lift(() => 42)
+        .flatMap((num) => IO.lift(() => num + 1))
+        .unsafeRun();
+    }, iterations);
   });
 
-  it("forM", () => {
-    perf("forM", async () => {
-      const effect = IO.forM(async (bind) => {
-        const a = await bind(IO.ofSync(() => 1));
-        const b = await bind(IO.ofSync(() => 2));
-        const c = await bind(IO.ofSync(() => 3));
+  it("Do", () => {
+    perf("Do", async () => {
+      const effect = IO.Do(async (bind) => {
+        const a = await bind(IO.lift(() => 1));
+        const b = await bind(IO.lift(() => 2));
+        const c = await bind(IO.lift(() => 3));
 
         return a + b + c;
       });
 
-      await effect.runAsync();
-    });
+      await effect.unsafeRun();
+    }, iterations);
   });
 });

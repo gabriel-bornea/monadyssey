@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { beforeEach, describe, expect, it, test } from "@jest/globals";
 import { Err, IO, Ok, Policy, PolicyValidationError, RetryError, Schedule } from "../src";
 
 describe("Schedule", () => {
@@ -83,7 +83,7 @@ describe("Schedule", () => {
 
     it("should resolve when the condition is met before the maximum retries", async () => {
       let retryCounter = 0;
-      const eff = IO.ofSync(() => {
+      const eff = IO.lift(() => {
         retryCounter += 1;
         if (retryCounter === 2) {
           return retryCounter;
@@ -94,9 +94,9 @@ describe("Schedule", () => {
       const condition = () => retryCounter !== 2;
       const liftE = (error: Error): Error => error;
 
-      const result = await schedule.retryIf(eff, condition, liftE).runAsync();
+      const result = await schedule.retryIf(eff, condition, liftE).unsafeRun();
 
-      expect(IO.isOk(result)).toBe(true);
+      expect(result.type === "Ok").toBe(true);
       expect((result as Ok<number>).value).toBe(2);
     });
 
@@ -113,14 +113,14 @@ describe("Schedule", () => {
 
       let retryCounter = 0;
 
-      const eff = IO.ofSync(() => {
+      const eff = IO.lift(() => {
         retryCounter += 1;
         if (retryCounter === 2) {
           return retryCounter;
         } else {
           throw new Error("Operation failed");
         }
-      }).mapError((e) => new BusinessError(e instanceof Error ? e.message : "Unexpected error", true));
+      }).mapErr((e) => new BusinessError(e instanceof Error ? e.message : "Unexpected error", true));
 
       const result = await schedule
         .retryIf(
@@ -128,22 +128,22 @@ describe("Schedule", () => {
           (e) => e.retryable === true,
           (e) => new BusinessError(e.message, false)
         )
-        .runAsync();
+        .unsafeRun();
 
-      expect(IO.isOk(result)).toBe(true);
+      expect(result.type === "Ok").toBe(true);
       expect((result as Ok<number>).value).toBe(2);
     });
 
     it("should reject when the maximum retries is reached without meeting the condition", async () => {
-      const eff = IO.of<Error, string>(() => {
+      const eff = IO.lift<Error, string>(() => {
         throw new RetryError("Failed to execute operation");
       });
       const condition = () => true;
       const liftE = (error: Error): Error => error;
 
-      const result = await schedule.retryIf(eff, condition, liftE).runAsync();
+      const result = await schedule.retryIf(eff, condition, liftE).unsafeRun();
 
-      expect(IO.isErr(result)).toBe(true);
+      expect(result.type === "Err").toBe(true);
       expect((result as Err<Error>).error.message).toBe(
         "Retry limit reached without success: RetryError: Failed to execute operation"
       );
@@ -151,13 +151,13 @@ describe("Schedule", () => {
 
     it("should reject when the timeout is exceeded", async () => {
       const timeoutPromise = () => new Promise<number>((resolve) => setTimeout(() => resolve(42), 350));
-      const eff = IO.of<Error, number>(timeoutPromise);
+      const eff = IO.lift<Error, number>(timeoutPromise);
       const condition = () => true;
       const liftE = (error: Error): Error => error;
 
-      const result = await schedule.retryIf(eff, condition, liftE).runAsync();
+      const result = await schedule.retryIf(eff, condition, liftE).unsafeRun();
 
-      expect(IO.isErr(result)).toBe(true);
+      expect(result.type === "Err").toBe(true);
       expect((result as Err<Error>).error.message).toBe(
         "Retry limit reached without success: TimeoutError: The operation timed out after 300 milliseconds"
       );
@@ -181,13 +181,13 @@ describe("Schedule", () => {
     it("should repeat the asynchronous function defined number of times", async () => {
       let counter = 0;
 
-      const eff = IO.ofSync<string, number>(() => {
+      const eff = IO.lift<string, number>(() => {
         counter += 1;
         return counter;
       });
 
       const liftE = (error: Error): string => error.message;
-      const result = await schedule.repeat(eff, liftE).runAsync();
+      const result = await schedule.repeat(eff, liftE).unsafeRun();
 
       expect(result.type).toBe("Ok");
       expect((result as Ok<number>).value).toBe(3);
@@ -195,17 +195,17 @@ describe("Schedule", () => {
 
     it("should repeat an operation created from multiple IOs", async () => {
       let counter = 0;
-      const eff = IO.ofSync<Error, number>(() => {
+      const eff = IO.lift<Error, number>(() => {
         counter += 1;
         return counter;
       });
-      const eff2 = IO.ofSync<Error, number>(() => 3);
-      const eff3 = IO.ofSync<Error, number>(() => 5);
+      const eff2 = IO.lift<Error, number>(() => 3);
+      const eff3 = IO.lift<Error, number>(() => 5);
 
       const liftE = (error: Error): Error => new Error(`Unexpected error: ${error.message}`);
 
       const op = eff.flatMap(() => eff2).flatMap(() => eff3);
-      const result = await schedule.repeat(op, liftE).runAsync();
+      const result = await schedule.repeat(op, liftE).unsafeRun();
 
       expect(result.type).toBe("Ok");
       expect((result as Ok<number>).value).toBe(5);
@@ -213,7 +213,7 @@ describe("Schedule", () => {
 
     it("should return the last value after the number after retries is completed", async () => {
       let counter = 0;
-      const eff = IO.ofSync<Error, number>(() => {
+      const eff = IO.lift<Error, number>(() => {
         counter += 1;
         if (counter === 3) {
           return 42;
@@ -223,15 +223,15 @@ describe("Schedule", () => {
       });
       const liftE = (error: Error): Error => new Error(`Unexpected error: ${error.message}`);
 
-      const result = await schedule.repeat(eff, liftE).runAsync();
+      const result = await schedule.repeat(eff, liftE).unsafeRun();
 
-      expect(IO.isOk(result)).toBe(true);
+      expect(result.type === "Ok").toBe(true);
       expect((result as Ok<number>).value).toBe(42);
     });
 
     it("should fail if the operation repeated fails", async () => {
       let counter = 0;
-      const eff = IO.ofSync<Error, number>(() => {
+      const eff = IO.lift<Error, number>(() => {
         counter += 1;
         if (counter === 2) {
           throw new Error("Failed to complete the operation");
@@ -241,9 +241,9 @@ describe("Schedule", () => {
       });
       const liftE = (error: Error) => error;
 
-      const result = await schedule.repeat(eff, liftE).runAsync();
+      const result = await schedule.repeat(eff, liftE).unsafeRun();
 
-      expect(IO.isErr(result)).toBe(true);
+      expect(result.type === "Err").toBe(true);
       expect((result as Err<Error>).error.message).toContain("Failed to complete the operation");
     });
   });
@@ -264,7 +264,7 @@ describe("Schedule", () => {
     test("should cancel retryIf operation", async () => {
       schedule = new Schedule(policy);
       let attempt = 0;
-      const eff = IO.ofSync(() => {
+      const eff = IO.lift(() => {
         attempt++;
         if (attempt === 4) {
           return 42;
@@ -281,9 +281,9 @@ describe("Schedule", () => {
       // Cancel the operation after a short delay
       setTimeout(() => schedule.cancel(), 150);
 
-      const result = await operation.runAsync();
+      const result = await operation.unsafeRun();
 
-      expect(IO.isErr(result)).toEqual(true);
+      expect(result.type === "Err").toEqual(true);
 
       const error = result as Err<string>;
       expect(error.error).toBe("Operation was cancelled");
@@ -309,16 +309,16 @@ describe("Schedule", () => {
         }
       }
 
-      const eff = IO.ofSync(() => 42);
+      const eff = IO.lift(() => 42);
       const liftE = (error: Error): BusinessError => new BusinessError(error.message);
 
       const operation = schedule.repeat(eff, liftE);
       // Cancel the operation after a short delay
       setTimeout(() => schedule.cancel(), 150);
 
-      const result = await operation.runAsync();
+      const result = await operation.unsafeRun();
 
-      expect(IO.isErr(result)).toEqual(true);
+      expect(result.type === "Err").toEqual(true);
 
       const error = result as Err<BusinessError>;
       expect(error.error.message).toBe("Operation was cancelled");

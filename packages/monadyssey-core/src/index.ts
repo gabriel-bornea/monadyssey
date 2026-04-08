@@ -1,5 +1,5 @@
 export { IO } from "./io";
-export type { Ok, Err } from "./io";
+export type { Ok, Err, Cancelled, Fiber } from "./io";
 export { NonEmptyList } from "./non-empty-list";
 export type { Nel } from "./non-empty-list";
 export { Schedule, RepeatError, PolicyValidationError, TimeoutError, RetryError, CancellationError } from "./schedule";
