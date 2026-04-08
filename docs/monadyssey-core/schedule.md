@@ -207,7 +207,40 @@ const operation = schedule.retryIf(eff, condition, liftE)
 
 ## Cancellation
 
-A running schedule can be cancelled by calling `cancel()`. This stops the retry/repeat loop at the next check point (before each attempt and after each delay).
+Schedule supports two cancellation mechanisms that both propagate through `AbortSignal`:
+
+### IO signal (fiber / timeout)
+
+When a Schedule operation runs inside an IO, cancelling the IO (via `fiber.cancel()` or `IO.timeout`) propagates the `AbortSignal` into the schedule's delay loops. In-progress delays are aborted immediately — no time is wasted waiting for the next check point.
+
+```typescript
+const schedule = new Schedule({ recurs: 10, factor: 2, delay: 1000 });
+
+const operation = schedule.retryIf(
+  IO.lift(() => fetchData()),
+  (err) => err instanceof NetworkError,
+  (e) => new AppError(e.message)
+);
+
+const fiber = await operation.fork().getOrNull();
+
+// Later: cancel the fiber — aborts the current delay immediately
+await fiber!.cancel();
+
+const result = await fiber!.join();
+// result: { type: "Cancelled" }
+```
+
+Combined with `IO.timeout` for a hard deadline on the entire retry sequence:
+
+```typescript
+const operation = schedule.retryIf(eff, condition, liftE)
+  .timeout(10000, () => new AppError("Total deadline exceeded"));
+```
+
+### Manual cancel
+
+Calling `schedule.cancel()` aborts the internal `AbortController`, which has the same immediate effect on in-progress delays. This works both standalone and when the schedule is running inside an IO.
 
 ```typescript
 const schedule = new Schedule({ recurs: Infinity, factor: 1, delay: 1000 });
@@ -224,9 +257,11 @@ const result = await operation.unsafeRun();
 // result: { type: "Err", error: AppError("Operation was cancelled") }
 ```
 
-Cancellation produces a `CancellationError` which is transformed through `liftE` into the error type `E`.
+Manual cancellation produces a `CancellationError` which is transformed through `liftE` into the error type `E`. IO signal cancellation produces a `Cancelled` result directly.
 
-Note: `Schedule.cancel()` is separate from IO's fiber-based cancellation (`fork` / `Fiber.cancel`). Schedule cancellation stops the retry/repeat loop. Fiber cancellation aborts the underlying computation via `AbortSignal`.
+### Signal merging
+
+Internally, `retryIf` and `repeat` merge the IO signal and the manual cancel signal into a single `AbortController`. Either signal firing aborts the merged controller, which immediately resolves any pending `abortableDelay`. Event listeners are cleaned up in a `finally` block to prevent leaks.
 
 ---
 

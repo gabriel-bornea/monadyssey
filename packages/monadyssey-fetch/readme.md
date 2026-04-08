@@ -5,15 +5,15 @@
 
 ### Overview
 
-**monadyssey-fetch** is an HTTP client module designed to provide a functional and composable interface for making 
-HTTP requests. It leverages `IO` and other functional constructs from the **monadyssey** core to ensure predictable 
+**monadyssey-fetch** is an HTTP client module designed to provide a functional and composable interface for making
+HTTP requests. It leverages `IO` and other functional constructs from the **monadyssey** core to ensure predictable
 error handling, declarative workflows, and type safety when interacting with APIs.
 
 ### Documentation
 
 Explore the documentation for specific features:
 
-- [HttpClient](../../docs/monadyssey-fetch/http-client.md): Encapsulate HTTP requests as composable `IO` operations, manage side effects in a functional style, and handle errors consistently with the `HttpClient`.
+- [HttpClient](../../docs/monadyssey-fetch/http-client.md): Composable HTTP client with base URL, interceptors, cancellation, timeout, and native body type support.
 
 ### Installation
 
@@ -25,76 +25,100 @@ npm install monadyssey-fetch
 
 ### Features
 
-#### Functional HTTP Requests
+#### Instance-Based Configuration
 
-`monadyssey-fetch` provides an HTTP client with methods like `get`, `post`, `put`, `patch`, `delete`, and a 
-customizable `fetch` function for fine-grained control. All requests return the `IO` type to model asynchronous 
-computations explicitly.
+Each `HttpClient` instance carries its own configuration — base URL, interceptors, default headers, timeout, and
+credentials. Different parts of an application can use independently configured clients.
+
+#### Cancellation
+
+Cancelling an IO (via `fiber.cancel()` or `IO.timeout`) aborts the underlying `fetch` call through `AbortSignal`.
+No network resources are wasted on cancelled requests.
+
+#### Timeout
+
+Configurable at both client level and per-request. When a timeout fires, the HTTP request is aborted.
+
+#### Native Body Types
+
+`FormData`, `Blob`, `File`, `ArrayBuffer`, `URLSearchParams`, and `ReadableStream` are passed directly to `fetch`
+without JSON serialization. For `FormData`, no `Content-Type` header is set — the browser handles the multipart
+boundary automatically.
+
+#### Interceptors
+
+Interceptors are passed at construction time and are immutable. They can transform requests, short-circuit responses,
+retry on failure, or modify responses. Different client instances can have independent interceptor stacks.
 
 #### Explicit Error Handling
 
-The `IO` type encapsulates asynchronous HTTP operations, explicitly modeling success and failure states. This ensures 
-errors are handled predictably, allowing developers to transform or recover from errors in a controlled manner.
-
-#### Type Safety
-
-Requests support generic type parameters to define the expected shape of response data, enabling compile-time safety 
-and reducing runtime errors.
-
-#### Customizable Requests
-
-The fetch function allows you to use any HTTP method and provides options for headers, response types, and 
-credentials, giving you complete control over the request.
+All requests return `IO<HttpError, T>`, explicitly modeling success and failure. Errors include HTTP status, response
+body, headers, and URL for full diagnostic context.
 
 ### Usage
 
-**GET Request**
+**Creating a Client**
 ```typescript
 import { HttpClient } from "monadyssey-fetch";
 
-await HttpClient.get<{ id: number; name: string }>("https://api.example.com/items/1")
-  .tap((response) => console.log(response))
-  .mapError((error) => console.error(error))
-  .runAsync();
+const api = new HttpClient({
+  baseUrl: "https://api.example.com",
+  interceptors: [authInterceptor],
+  defaultHeaders: { "Accept": "application/json" },
+  timeout: 5000,
+});
+```
+
+**GET Request**
+```typescript
+const result = await api.get<User>("/users/1").unsafeRun();
 ```
 
 **POST Request with Body**
 ```typescript
-await HttpClient.post<{ id: number; name: string }>("https://api.example.com/items", { name: "New Item" })
-  .tap((response) => console.log(response))
-  .mapError((error) => console.error(error))
-  .runAsync();
+await api.post<User>("/users", { name: "New User" })
+  .tap((user) => console.log(user))
+  .mapErr((error) => console.error(error))
+  .unsafeRun();
+```
+
+**File Upload with FormData**
+```typescript
+const formData = new FormData();
+formData.append("file", file);
+
+await api.post("/upload", formData).unsafeRun();
 ```
 
 **Custom Request with `fetch`**
 ```typescript
-await HttpClient.fetch<{ message: string }>("https://api.example.com/custom", "OPTIONS", { headers: { "X-Custom-Header": "value" } })
-  .tap((response) => console.log(response))
-  .mapError((error) => console.error(error))
-  .runAsync();
+await api.fetch<{ message: string }>("/custom", "OPTIONS", {
+  headers: { "X-Custom-Header": "value" },
+}).unsafeRun();
 ```
-### Options
 
-The request methods support the following options:
+### Options
 
 | **Option**     | **Type**                                                    | **Description**                                                               |
 |----------------|-------------------------------------------------------------|-------------------------------------------------------------------------------|
-| `headers`     | `Record<string, string>`                                     | Custom headers for the request.                                               |
-| `responseType`| `"json"`, `"text"`, `"blob"`, `"arrayBuffer"`, `"formData"` | The expected response type. **Defaults to `"json"`.**                         |
-| `credentials` | `"omit"`, `"same-origin"`, `"include"`                      | Indicates whether to include cookies in the request. **Defaults to `"include"`.** |
-| `observe`     | `"body"` or `"response"`                                     | Determines if the result should be the parsed body or the full `Response`. **Defaults to `"body"`.** |
-| `transform`   | `(data: any) => A`                                           | A function to transform the response data.                                    |
-
+| `headers`     | `Record<string, string>`                                     | Custom headers. Merged with defaults, keys normalized to lowercase            |
+| `body`        | `any`                                                        | Request payload. Objects auto-JSON; FormData/Blob passed as-is                |
+| `responseType`| `"json"`, `"text"`, `"blob"`, `"arrayBuffer"`, `"formData"` | Expected response type. **Defaults to `"json"`**                              |
+| `credentials` | `"omit"`, `"same-origin"`, `"include"`                      | Credential policy. **Defaults to client setting (`"include"`)**               |
+| `observe`     | `"body"` or `"response"`                                     | Return parsed body or full `Response`. **Defaults to `"body"`**               |
+| `transform`   | `(data: any) => A`                                           | Transform the response data                                                   |
+| `timeout`     | `number`                                                     | Per-request timeout in milliseconds. Overrides client-level timeout           |
 
 ### Error Handling
-Errors are encapsulated in the HttpError type, which includes:
 
-* `status`: The HTTP status code.
-* `message`: A formatted error message containing the URL, status, and raw message.
-* `rawMessage`: The raw error message describing the error.
-* `body`: The response body if available.
-* `url`: The request URL.
-* `headers`: The HTTP headers returned by the server, if available. In some cases, such as internal errors, the headers may not be included.
+Errors are encapsulated in the `HttpError` type, which includes:
+
+* `status`: The HTTP status code (500 for network errors)
+* `message`: Formatted error message containing the URL, status, and raw message
+* `rawMessage`: The raw error description
+* `body`: The response body if available
+* `url`: The request URL
+* `headers`: The response headers if available
 
 ### License
 

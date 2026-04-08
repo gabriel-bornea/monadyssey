@@ -1,5 +1,15 @@
 import { beforeEach, describe, expect, it, test } from "@jest/globals";
-import { Err, IO, Ok, Policy, PolicyValidationError, RetryError, Schedule, CancellationError } from "../src";
+import {
+  Err,
+  IO,
+  Ok,
+  Policy,
+  PolicyValidationError,
+  RetryError,
+  ConditionalRetryError,
+  Schedule,
+  CancellationError,
+} from "../src";
 
 describe("Schedule", () => {
   describe("constructor", () => {
@@ -397,6 +407,107 @@ describe("Schedule", () => {
 
       expect(result.type).toBe("Err");
       expect((result as Err<Error>).error.message).toContain("condition exploded");
+    });
+  });
+
+  describe("IO signal cancellation", () => {
+    it("should abort retryIf when the IO fiber is cancelled", async () => {
+      const schedule = new Schedule({ recurs: 10, factor: 1, delay: 500 });
+      let attempt = 0;
+
+      const eff = IO.lift<Error, number>(() => {
+        attempt++;
+        throw new Error("always fails");
+      });
+
+      const operation = schedule.retryIf(
+        eff,
+        () => true,
+        (e) => e
+      );
+      const fiber = await operation.fork().getOrNull();
+
+      // Cancel via fiber after the first attempt but during the delay
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await fiber!.cancel();
+
+      const result = await fiber!.join();
+
+      expect(result.type).toBe("Cancelled");
+      expect(attempt).toBe(1);
+    }, 2000);
+
+    it("should abort repeat when the IO fiber is cancelled", async () => {
+      const schedule = new Schedule({ recurs: Infinity, factor: 1, delay: 200 });
+      let counter = 0;
+
+      const eff = IO.lift<Error, number>(() => {
+        counter++;
+        return counter;
+      });
+
+      const operation = schedule.repeat(eff, (e) => e);
+      const fiber = await operation.fork().getOrNull();
+
+      // Cancel via fiber during a delay
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await fiber!.cancel();
+
+      const result = await fiber!.join();
+
+      expect(result.type).toBe("Cancelled");
+      expect(counter).toBeGreaterThanOrEqual(1);
+      expect(counter).toBeLessThan(10);
+    }, 2000);
+
+    it("should abort retryIf immediately when IO signal is already aborted", async () => {
+      const schedule = new Schedule({ recurs: 5, factor: 1, delay: 500 });
+
+      const eff = IO.lift<Error, number>(() => {
+        throw new Error("fails");
+      });
+
+      const operation = schedule.retryIf(
+        eff,
+        () => true,
+        (e) => e
+      );
+      const fiber = await operation.fork().getOrNull();
+
+      // Cancel immediately
+      await fiber!.cancel();
+
+      const result = await fiber!.join();
+
+      expect(result.type).toBe("Cancelled");
+    }, 2000);
+  });
+
+  describe("ConditionalRetryError export", () => {
+    it("should be importable and usable", () => {
+      const error = new ConditionalRetryError("test");
+      expect(error).toBeInstanceOf(Error);
+      expect(error.name).toBe("ConditionalRetryError");
+      expect(error.message).toBe("test");
+    });
+
+    it("should be produced when retry condition is not met", async () => {
+      const schedule = new Schedule({ recurs: 3, factor: 1, delay: 0 });
+
+      const eff = IO.lift<Error, number>(() => {
+        throw new Error("op failed");
+      });
+
+      const result = await schedule
+        .retryIf(
+          eff,
+          () => false,
+          (e) => e
+        )
+        .unsafeRun();
+
+      expect(result.type).toBe("Err");
+      expect((result as Err<Error>).error.message).toContain("Retry condition not met");
     });
   });
 

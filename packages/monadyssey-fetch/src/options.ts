@@ -25,42 +25,25 @@ export type Credentials = "omit" | "same-origin" | "include";
 
 /**
  * Represents the HTTP method for the request.
- * - `"GET"`: Retrieve data from the server.
- * - `"POST"`: Submit data to be processed by the server.
- * - `"PUT"`: Update data on the server.
- * - `"PATCH"`: Partially update data on the server.
- * - `"DELETE"`: Delete data on the server.
- * - `"OPTIONS"`: Retrieve the communication options for a resource.
- * - `"HEAD"`: Retrieve headers without the response body.
  */
 export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS" | "HEAD";
 
 /**
- * Options for configuring an HTTP request.
+ * Options for configuring an individual HTTP request.
  *
  * @template A - The expected type of the response body after transformation.
- *
- * @property {Record<string, string>} [headers] - An object representing custom headers to include in the request.
- * @property {any} [body] - The request payload. If the payload is an object, it will be stringified as JSON by default.
- * @property {ResponseType} [responseType="json"] - The expected format of the response body.
- *   Can be one of `"json"`, `"text"`, `"blob"`, `"arrayBuffer"`, or `"formData"`.
- * @property {Credentials} [credentials="include"] - Indicates whether the request should include cookies or authentication headers.
- *   Can be `"omit"`, `"same-origin"`, or `"include"`.
- * @property {Observe} [observe="body"] - Specifies whether the full `Response` object or just the response body should be returned.
- *   Use `"response"` to get the full `Response` object or `"body"` to get the parsed body.
- * @property {(data: any) => A} [transform] - A function to transform the raw response body into the desired type `A`.
  */
 export type Options<A = any> = {
-  /** An object representing request headers as key-value pairs. */
+  /** Custom headers for the request as key-value pairs. */
   headers?: Record<string, string>;
 
-  /** The request payload. Can be any type, typically an object or string. */
+  /** The request payload. */
   body?: any;
 
   /** The expected type of the response body. Defaults to `"json"`. */
   responseType?: ResponseType;
 
-  /** The credential policy for the request. Defaults to `"include"`. */
+  /** The credential policy for the request. Defaults to the client-level setting. */
   credentials?: Credentials;
 
   /** Specifies how the response should be observed. Defaults to `"body"`. */
@@ -68,4 +51,45 @@ export type Options<A = any> = {
 
   /** A function to transform the response body into the desired type. */
   transform?: (data: any) => A;
+
+  /** Per-request timeout in milliseconds. Overrides the client-level timeout. */
+  timeout?: number;
 };
+
+/**
+ * Configuration for creating an HttpClient instance.
+ */
+export type HttpClientConfig = {
+  /** Base URL prepended to relative paths. */
+  baseUrl?: string;
+
+  /** Interceptors applied in registration order (first registered = outermost). Immutable after construction. */
+  interceptors?: HttpInterceptor[];
+
+  /** Default headers merged into every request. Per-request headers take precedence. */
+  defaultHeaders?: Record<string, string>;
+
+  /** Default timeout in milliseconds for all requests. Can be overridden per-request. */
+  timeout?: number;
+
+  /** Default credentials policy. Defaults to `"include"`. */
+  credentials?: Credentials;
+};
+
+/**
+ * An HTTP interceptor that can modify or handle request and response data
+ * before and after an outgoing `fetch` call.
+ */
+export interface HttpInterceptor {
+  /**
+   * Intercepts an outgoing HTTP request.
+   *
+   * Call `next(request)` to continue the chain with the (optionally modified) request.
+   * Return a `Promise<Response>` without calling `next` to short-circuit the request.
+   *
+   * @param request - The configuration object for the pending `fetch` call.
+   * @param next - Forwards the request to the next interceptor or to `fetch`.
+   * @returns A Promise of the resulting `Response`.
+   */
+  intercept(request: RequestInit, next: (req: RequestInit) => Promise<Response>): Promise<Response>;
+}

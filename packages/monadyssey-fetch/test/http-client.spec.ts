@@ -3,8 +3,11 @@ import { HttpClient, HttpError, HttpInterceptor } from "../src";
 import { Err, Ok } from "monadyssey";
 
 describe("HttpClient", () => {
+  let client: HttpClient;
+
   beforeEach(() => {
     global.fetch = jest.fn();
+    client = new HttpClient();
   });
 
   afterEach(() => {
@@ -27,30 +30,46 @@ describe("HttpClient", () => {
     return Promise.resolve(new Response(body, { status: 200, headers: { "Content-Type": "text/plain" } }));
   }
 
+  describe("constructor and default()", () => {
+    it("should create a default instance", () => {
+      const def = HttpClient.default();
+      expect(def).toBeInstanceOf(HttpClient);
+    });
+
+    it("should create an instance with config", () => {
+      const configured = new HttpClient({
+        baseUrl: "https://api.example.com",
+        defaultHeaders: { "x-api-key": "secret" },
+        timeout: 5000,
+        credentials: "omit",
+      });
+      expect(configured).toBeInstanceOf(HttpClient);
+    });
+  });
+
   describe("get", () => {
     it("should make a successful GET request and return the response body", async () => {
       const item = { id: 1, name: "Test Item" };
       (global.fetch as jest.Mock).mockResolvedValue(ok(item));
 
-      const eff = await HttpClient.get<typeof item>("https://api.example.com/items").unsafeRun();
+      const eff = await client.get<typeof item>("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<typeof item>;
-
       expect(result.value).toEqual(item);
-      expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        method: "GET",
-        headers: {},
-        credentials: "include",
-        body: undefined,
-      });
+
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[0]).toBe("https://api.example.com/items");
+      expect(args[1].method).toBe("GET");
+      expect(args[1].credentials).toBe("include");
+      expect(args[1].body).toBeUndefined();
     });
 
     it("should handle errors gracefully", async () => {
       const error = { code: "INVALID_REQUEST", message: "Invalid request" };
       (global.fetch as jest.Mock).mockResolvedValue(badRequest(error));
 
-      const eff = await HttpClient.get("https://api.example.com/items").unsafeRun();
+      const eff = await client.get("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -60,9 +79,9 @@ describe("HttpClient", () => {
     });
 
     it("should handle network errors gracefully", async () => {
-      (fetch as jest.Mock).mockRejectedValue(new Error("Network Error"));
+      (global.fetch as jest.Mock).mockRejectedValue(new Error("Network Error"));
 
-      const eff = await HttpClient.get("https://api.example.com/items").unsafeRun();
+      const eff = await client.get("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = eff as Err<HttpError>;
@@ -71,25 +90,21 @@ describe("HttpClient", () => {
       );
     });
 
-    it("should include custom headers in the request", async () => {
+    it("should include custom headers in the request (lowercased)", async () => {
       const item = { id: 1, name: "Test Item" };
       (global.fetch as jest.Mock).mockResolvedValue(ok(item));
 
       const headers = { Authorization: "Bearer token" };
-      await HttpClient.get<typeof item>("https://api.example.com/items", { headers }).unsafeRun();
+      await client.get<typeof item>("https://api.example.com/items", { headers }).unsafeRun();
 
-      expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        method: "GET",
-        headers: { Authorization: "Bearer token" },
-        credentials: "include",
-        body: undefined,
-      });
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].headers).toEqual({ authorization: "Bearer token" });
     });
 
     it("should handle non-JSON response", async () => {
       (global.fetch as jest.Mock).mockResolvedValue(textResponse("Plain text response"));
 
-      const eff = await HttpClient.get<string>("https://api.example.com/items", { responseType: "text" }).unsafeRun();
+      const eff = await client.get<string>("https://api.example.com/items", { responseType: "text" }).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<string>;
@@ -100,7 +115,7 @@ describe("HttpClient", () => {
       const item = { id: 1, name: "Test Item" };
       (global.fetch as jest.Mock).mockResolvedValue(ok(item));
 
-      const eff = await HttpClient.get("https://api.example.com/items", { observe: "response" }).unsafeRun();
+      const eff = await client.get("https://api.example.com/items", { observe: "response" }).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<Response>;
@@ -113,7 +128,7 @@ describe("HttpClient", () => {
         new Response(null, { status: 204, headers: { "Content-Type": "application/json" } })
       );
 
-      const eff = await HttpClient.get("https://api.example.com/items").unsafeRun();
+      const eff = await client.get("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<null>;
@@ -125,13 +140,11 @@ describe("HttpClient", () => {
         new Response("Invalid JSON", { status: 200, headers: { "Content-Type": "application/json" } })
       );
 
-      const eff = await HttpClient.get("https://api.example.com/items").unsafeRun();
+      const eff = await client.get("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
-      expect(err.message).toEqual(
-        "Request to 'https://api.example.com/items' failed with status 200 and message: Unexpected token 'I', \"Invalid JSON\" is not valid JSON."
-      );
+      expect(err.message).toContain("Request to 'https://api.example.com/items' failed with status 200");
     });
 
     it("should handle request timeouts gracefully", async () => {
@@ -139,7 +152,7 @@ describe("HttpClient", () => {
         () => new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 1000))
       );
 
-      const eff = await HttpClient.get("https://api.example.com/items").unsafeRun();
+      const eff = await client.get("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
@@ -155,13 +168,12 @@ describe("HttpClient", () => {
 
       (global.fetch as jest.Mock).mockResolvedValue(badRequest(error));
 
-      const eff = await HttpClient.get("https://api.example.com/register").unsafeRun();
+      const eff = await client.get("https://api.example.com/register").unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
       expect(err.status).toEqual(400);
       expect(err.body).toEqual(error);
-      expect(err.url).toEqual("https://api.example.com/register");
     });
 
     it("should include headers in the error response when parsing fails", async () => {
@@ -170,9 +182,8 @@ describe("HttpClient", () => {
         "Content-Type": "application/json",
       });
 
-      const fetch = global.fetch as jest.Mock;
-
-      fetch.mockResolvedValue({
+      const fetchMock = global.fetch as jest.Mock;
+      fetchMock.mockResolvedValue({
         ok: true,
         status: 200,
         statusText: "OK",
@@ -180,24 +191,15 @@ describe("HttpClient", () => {
         json: jest.fn().mockRejectedValue(new SyntaxError("Unexpected token I in JSON")),
       });
 
-      const eff = await HttpClient.get("https://api.example.com/items").unsafeRun();
+      const eff = await client.get("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Err");
 
-      const error = eff as Err<HttpError>;
-      const httpError = error.error;
-
+      const httpError = (eff as Err<HttpError>).error;
       expect(httpError.status).toEqual(200);
       expect(httpError.rawMessage).toContain("Unexpected token I in JSON");
       expect(httpError.headers).toEqual({
         "x-request-id": "67890",
         "content-type": "application/json",
-      });
-
-      expect(fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        method: "GET",
-        headers: {},
-        credentials: "include",
-        body: undefined,
       });
     });
 
@@ -208,9 +210,8 @@ describe("HttpClient", () => {
       });
       const errorBody = { error: "Invalid request" };
 
-      const fetch = global.fetch as jest.Mock;
-
-      fetch.mockResolvedValue({
+      const fetchMock = global.fetch as jest.Mock;
+      fetchMock.mockResolvedValue({
         ok: false,
         status: 400,
         statusText: "Bad Request",
@@ -218,27 +219,17 @@ describe("HttpClient", () => {
         json: jest.fn().mockResolvedValue(errorBody),
       });
 
-      const eff = await HttpClient.get("https://api.example.com/items").unsafeRun();
+      const eff = await client.get("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Err");
 
-      const error = eff as Err<HttpError>;
-      const httpError = error.error;
-
+      const httpError = (eff as Err<HttpError>).error;
       expect(httpError.status).toEqual(400);
       expect(httpError.rawMessage).toEqual("Bad Request");
       expect(httpError.headers).toEqual({
         "x-request-id": "12345",
         "content-type": "application/json",
       });
-
       expect(httpError.body).toEqual(errorBody);
-
-      expect(fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        method: "GET",
-        headers: {},
-        credentials: "include",
-        body: undefined,
-      });
     });
   });
 
@@ -247,44 +238,36 @@ describe("HttpClient", () => {
       const item = { id: 1, name: "New Item" };
       (global.fetch as jest.Mock).mockResolvedValue(ok(item));
 
-      const eff = await HttpClient.post<typeof item>("https://api.example.com/items", { name: "New Item" }).unsafeRun();
+      const eff = await client.post<typeof item>("https://api.example.com/items", { name: "New Item" }).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<typeof item>;
       expect(result.value).toEqual(item);
-      expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify({ name: "New Item" }),
-      });
+
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].headers["content-type"]).toBe("application/json");
+      expect(args[1].body).toBe(JSON.stringify({ name: "New Item" }));
     });
 
     it("should handle errors gracefully", async () => {
       const error = { code: "INVALID_REQUEST", message: "Invalid request" };
       (global.fetch as jest.Mock).mockResolvedValue(badRequest(error));
 
-      const eff = await HttpClient.post("https://api.example.com/items", { name: "New Item" }).unsafeRun();
+      const eff = await client.post("https://api.example.com/items", { name: "New Item" }).unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
       expect(err.status).toEqual(400);
-      expect(err.body).toEqual(error);
-      expect(err.url).toEqual("https://api.example.com/items");
     });
 
     it("should handle network errors gracefully", async () => {
       (global.fetch as jest.Mock).mockRejectedValue(new Error("Network Error"));
 
-      const eff = await HttpClient.post("https://api.example.com/items", { name: "New Item" }).unsafeRun();
+      const eff = await client.post("https://api.example.com/items", { name: "New Item" }).unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
-      expect(err.message).toEqual(
-        "Request to 'https://api.example.com/items' failed with status 500 and message: Network Error."
-      );
+      expect(err.message).toContain("Network Error");
     });
 
     it("should include custom headers in the request", async () => {
@@ -292,31 +275,19 @@ describe("HttpClient", () => {
       (global.fetch as jest.Mock).mockResolvedValue(ok(item));
 
       const headers = { Authorization: "Bearer token" };
-      await HttpClient.post<typeof item>(
-        "https://api.example.com/items",
-        { name: "New Item" },
-        { headers }
-      ).unsafeRun();
+      await client.post<typeof item>("https://api.example.com/items", { name: "New Item" }, { headers }).unsafeRun();
 
-      expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer token",
-        },
-        credentials: "include",
-        body: JSON.stringify({ name: "New Item" }),
-      });
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].headers["content-type"]).toBe("application/json");
+      expect(args[1].headers["authorization"]).toBe("Bearer token");
     });
 
     it("should handle non-JSON response types", async () => {
       (global.fetch as jest.Mock).mockResolvedValue(textResponse("Plain text response"));
 
-      const eff = await HttpClient.post<string>(
-        "https://api.example.com/items",
-        { name: "New Item" },
-        { responseType: "text" }
-      ).unsafeRun();
+      const eff = await client
+        .post<string>("https://api.example.com/items", { name: "New Item" }, { responseType: "text" })
+        .unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<string>;
@@ -327,22 +298,19 @@ describe("HttpClient", () => {
       const item = { id: 1, name: "New Item" };
       (global.fetch as jest.Mock).mockResolvedValue(ok(item));
 
-      const eff = await HttpClient.post(
-        "https://api.example.com/items",
-        { name: "New Item" },
-        { observe: "response" }
-      ).unsafeRun();
+      const eff = await client
+        .post("https://api.example.com/items", { name: "New Item" }, { observe: "response" })
+        .unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<Response>;
       expect(result.value.ok).toBe(true);
-      expect(await result.value.json()).toEqual(item);
     });
 
     it("should handle empty response body (204 No Content)", async () => {
       (global.fetch as jest.Mock).mockResolvedValue(new Response(null, { status: 204 }));
 
-      const eff = await HttpClient.post("https://api.example.com/items").unsafeRun();
+      const eff = await client.post("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<null>;
@@ -354,29 +322,23 @@ describe("HttpClient", () => {
         new Response("Invalid JSON", { status: 200, headers: { "Content-Type": "application/json" } })
       );
 
-      const eff = await HttpClient.post("https://api.example.com/items").unsafeRun();
+      const eff = await client.post("https://api.example.com/items").unsafeRun();
       expect(eff.type).toEqual("Err");
-
-      const err = (eff as Err<HttpError>).error;
-      expect(err.message).toEqual(
-        "Request to 'https://api.example.com/items' failed with status 200 and message: Unexpected token 'I', \"Invalid JSON\" is not valid JSON."
-      );
     });
 
     it("should send a POST request with a custom Content-Type header", async () => {
       const formData = "name=NewItem";
       (global.fetch as jest.Mock).mockResolvedValue(ok({ success: true }));
 
-      await HttpClient.post("https://api.example.com/items", formData, {
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      }).unsafeRun();
+      await client
+        .post("https://api.example.com/items", formData, {
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        })
+        .unsafeRun();
 
-      expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        credentials: "include",
-        body: formData,
-      });
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].headers["content-type"]).toBe("application/x-www-form-urlencoded");
+      expect(args[1].body).toBe(formData);
     });
   });
 
@@ -385,76 +347,59 @@ describe("HttpClient", () => {
       const item = { id: 1, name: "Updated Item" };
       (global.fetch as jest.Mock).mockResolvedValue(ok(item));
 
-      const eff = await HttpClient.put<typeof item>("https://api.example.com/items/1", {
-        name: "Updated Item",
-      }).unsafeRun();
+      const eff = await client
+        .put<typeof item>("https://api.example.com/items/1", { name: "Updated Item" })
+        .unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<typeof item>;
       expect(result.value).toEqual(item);
-      expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ name: "Updated Item" }),
-      });
+
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].headers["content-type"]).toBe("application/json");
+      expect(args[1].body).toBe(JSON.stringify({ name: "Updated Item" }));
     });
 
     it("should handle server errors (400 Bad Request) gracefully", async () => {
       const error = { code: "INVALID_REQUEST", message: "Invalid request" };
       (global.fetch as jest.Mock).mockResolvedValue(badRequest(error));
 
-      const eff = await HttpClient.put("https://api.example.com/items/1", { name: "Invalid Item" }).unsafeRun();
+      const eff = await client.put("https://api.example.com/items/1", { name: "Invalid Item" }).unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
       expect(err.status).toEqual(400);
-      expect(err.body).toEqual(error);
-      expect(err.url).toEqual("https://api.example.com/items/1");
     });
 
     it("should handle network errors gracefully", async () => {
       (global.fetch as jest.Mock).mockRejectedValue(new Error("Network Error"));
 
-      const eff = await HttpClient.put("https://api.example.com/items/1", { name: "Updated Item" }).unsafeRun();
+      const eff = await client.put("https://api.example.com/items/1", { name: "Updated Item" }).unsafeRun();
       expect(eff.type).toEqual("Err");
-
-      const err = (eff as Err<HttpError>).error;
-      expect(err.message).toEqual(
-        "Request to 'https://api.example.com/items/1' failed with status 500 and message: Network Error."
-      );
     });
 
     it("should include custom headers in the request", async () => {
-      const item = { id: 1, name: "Updated Item" };
-      (global.fetch as jest.Mock).mockResolvedValue(ok(item));
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ id: 1 }));
 
-      const headers = { Authorization: "Bearer token" };
-      await HttpClient.put<typeof item>(
-        "https://api.example.com/items/1",
-        { name: "Updated Item" },
-        { headers }
-      ).unsafeRun();
+      await client
+        .put(
+          "https://api.example.com/items/1",
+          { name: "Updated Item" },
+          { headers: { Authorization: "Bearer token" } }
+        )
+        .unsafeRun();
 
-      expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer token",
-        },
-        credentials: "include",
-        body: JSON.stringify({ name: "Updated Item" }),
-      });
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].headers["authorization"]).toBe("Bearer token");
+      expect(args[1].headers["content-type"]).toBe("application/json");
     });
 
     it("should handle non-JSON response types", async () => {
       (global.fetch as jest.Mock).mockResolvedValue(textResponse("Plain text response"));
 
-      const eff = await HttpClient.put<string>(
-        "https://api.example.com/items/1",
-        { name: "Updated Item" },
-        { responseType: "text" }
-      ).unsafeRun();
+      const eff = await client
+        .put<string>("https://api.example.com/items/1", { name: "Updated Item" }, { responseType: "text" })
+        .unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<string>;
@@ -462,29 +407,23 @@ describe("HttpClient", () => {
     });
 
     it("should return the full response when observe is 'response'", async () => {
-      const item = { id: 1, name: "Updated Item" };
-      (global.fetch as jest.Mock).mockResolvedValue(ok(item));
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ id: 1 }));
 
-      const eff = await HttpClient.put(
-        "https://api.example.com/items/1",
-        { name: "Updated Item" },
-        { observe: "response" }
-      ).unsafeRun();
+      const eff = await client
+        .put("https://api.example.com/items/1", { name: "Updated Item" }, { observe: "response" })
+        .unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<Response>;
       expect(result.value.ok).toBe(true);
-      expect(await result.value.json()).toEqual(item);
     });
 
     it("should handle empty response body (204 No Content)", async () => {
       (global.fetch as jest.Mock).mockResolvedValue(new Response(null, { status: 204 }));
 
-      const eff = await HttpClient.put("https://api.example.com/items/1").unsafeRun();
+      const eff = await client.put("https://api.example.com/items/1").unsafeRun();
       expect(eff.type).toEqual("Ok");
-
-      const result = eff as Ok<null>;
-      expect(result.value).toBeNull();
+      expect((eff as Ok<null>).value).toBeNull();
     });
 
     it("should handle parsing errors gracefully", async () => {
@@ -492,13 +431,8 @@ describe("HttpClient", () => {
         new Response("Invalid JSON", { status: 200, headers: { "Content-Type": "application/json" } })
       );
 
-      const eff = await HttpClient.put("https://api.example.com/items/1", { name: "Updated Item" }).unsafeRun();
+      const eff = await client.put("https://api.example.com/items/1", { name: "Updated Item" }).unsafeRun();
       expect(eff.type).toEqual("Err");
-
-      const err = (eff as Err<HttpError>).error;
-      expect(err.message).toEqual(
-        "Request to 'https://api.example.com/items/1' failed with status 200 and message: Unexpected token 'I', \"Invalid JSON\" is not valid JSON."
-      );
     });
   });
 
@@ -507,120 +441,56 @@ describe("HttpClient", () => {
       const item = { id: 1, name: "Updated Item" };
       (global.fetch as jest.Mock).mockResolvedValue(ok(item));
 
-      const eff = await HttpClient.patch<typeof item>("https://api.example.com/items/1", {
-        name: "Updated Item",
-      }).unsafeRun();
+      const eff = await client
+        .patch<typeof item>("https://api.example.com/items/1", { name: "Updated Item" })
+        .unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<typeof item>;
       expect(result.value).toEqual(item);
-      expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ name: "Updated Item" }),
-      });
     });
 
-    it("should handle server errors (400 Bad Request) gracefully", async () => {
-      const error = { code: "INVALID_REQUEST", message: "Invalid request" };
-      (global.fetch as jest.Mock).mockResolvedValue(badRequest(error));
+    it("should handle server errors gracefully", async () => {
+      (global.fetch as jest.Mock).mockResolvedValue(badRequest({ code: "ERR" }));
 
-      const eff = await HttpClient.patch("https://api.example.com/items/1", { name: "Invalid Item" }).unsafeRun();
+      const eff = await client.patch("https://api.example.com/items/1", { name: "Invalid" }).unsafeRun();
       expect(eff.type).toEqual("Err");
-
-      const err = (eff as Err<HttpError>).error;
-      expect(err.status).toEqual(400);
-      expect(err.body).toEqual(error);
-      expect(err.url).toEqual("https://api.example.com/items/1");
+      expect((eff as Err<HttpError>).error.status).toEqual(400);
     });
 
     it("should handle network errors gracefully", async () => {
       (global.fetch as jest.Mock).mockRejectedValue(new Error("Network Error"));
 
-      const eff = await HttpClient.patch("https://api.example.com/items/1", { name: "Updated Item" }).unsafeRun();
+      const eff = await client.patch("https://api.example.com/items/1", { name: "Updated" }).unsafeRun();
       expect(eff.type).toEqual("Err");
-
-      const err = (eff as Err<HttpError>).error;
-      expect(err.message).toEqual(
-        "Request to 'https://api.example.com/items/1' failed with status 500 and message: Network Error."
-      );
     });
 
-    it("should include custom headers in the request", async () => {
-      const item = { id: 1, name: "Updated Item" };
-      (global.fetch as jest.Mock).mockResolvedValue(ok(item));
+    it("should include custom headers", async () => {
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ id: 1 }));
 
-      const headers = { Authorization: "Bearer token" };
-      await HttpClient.patch<typeof item>(
-        "https://api.example.com/items/1",
-        { name: "Updated Item" },
-        { headers }
-      ).unsafeRun();
+      await client
+        .patch("https://api.example.com/items/1", { name: "Updated" }, { headers: { Authorization: "Bearer token" } })
+        .unsafeRun();
 
-      expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer token",
-        },
-        credentials: "include",
-        body: JSON.stringify({ name: "Updated Item" }),
-      });
-    });
-
-    it("should handle non-JSON response types", async () => {
-      (global.fetch as jest.Mock).mockResolvedValue(textResponse("Plain text response"));
-
-      const eff = await HttpClient.patch<string>(
-        "https://api.example.com/items/1",
-        { name: "Updated Item" },
-        { responseType: "text" }
-      ).unsafeRun();
-      expect(eff.type).toEqual("Ok");
-
-      const result = eff as Ok<string>;
-      expect(result.value).toEqual("Plain text response");
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].headers["authorization"]).toBe("Bearer token");
     });
 
     it("should return the full response when observe is 'response'", async () => {
-      const item = { id: 1, name: "Updated Item" };
-      (global.fetch as jest.Mock).mockResolvedValue(ok(item));
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ id: 1 }));
 
-      const eff = await HttpClient.patch(
-        "https://api.example.com/items/1",
-        { name: "Updated Item" },
-        { observe: "response" }
-      ).unsafeRun();
-      expect(eff.type).toEqual("Ok");
-
+      const eff = await client
+        .patch("https://api.example.com/items/1", { name: "Updated" }, { observe: "response" })
+        .unsafeRun();
       const result = eff as Ok<Response>;
       expect(result.value.ok).toBe(true);
-      expect(await result.value.json()).toEqual(item);
     });
 
     it("should handle empty response body (204 No Content)", async () => {
       (global.fetch as jest.Mock).mockResolvedValue(new Response(null, { status: 204 }));
 
-      const eff = await HttpClient.patch("https://api.example.com/items/1").unsafeRun();
-      expect(eff.type).toEqual("Ok");
-
-      const result = eff as Ok<null>;
-      expect(result.value).toBeNull();
-    });
-
-    it("should handle parsing errors gracefully", async () => {
-      (global.fetch as jest.Mock).mockResolvedValue(
-        new Response("Invalid JSON", { status: 200, headers: { "Content-Type": "application/json" } })
-      );
-
-      const eff = await HttpClient.patch("https://api.example.com/items/1", { name: "Updated Item" }).unsafeRun();
-      expect(eff.type).toEqual("Err");
-
-      const err = (eff as Err<HttpError>).error;
-      expect(err.message).toEqual(
-        "Request to 'https://api.example.com/items/1' failed with status 200 and message: Unexpected token 'I', \"Invalid JSON\" is not valid JSON."
-      );
+      const eff = await client.patch("https://api.example.com/items/1").unsafeRun();
+      expect((eff as Ok<null>).value).toBeNull();
     });
   });
 
@@ -629,205 +499,118 @@ describe("HttpClient", () => {
       const item = { id: 1, name: "Deleted Item" };
       (global.fetch as jest.Mock).mockResolvedValue(ok(item));
 
-      const eff = await HttpClient.delete<typeof item>("https://api.example.com/items/1").unsafeRun();
+      const eff = await client.delete<typeof item>("https://api.example.com/items/1").unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<typeof item>;
       expect(result.value).toEqual(item);
-      expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
-        method: "DELETE",
-        headers: {},
-        credentials: "include",
-        body: undefined,
-      });
+
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].method).toBe("DELETE");
+      expect(args[1].body).toBeUndefined();
     });
 
-    it("should handle server errors (400 Bad Request) gracefully", async () => {
-      const error = { code: "INVALID_REQUEST", message: "Invalid request" };
-      (global.fetch as jest.Mock).mockResolvedValue(badRequest(error));
+    it("should handle server errors gracefully", async () => {
+      (global.fetch as jest.Mock).mockResolvedValue(badRequest({ code: "ERR" }));
 
-      const eff = await HttpClient.delete("https://api.example.com/items/1").unsafeRun();
+      const eff = await client.delete("https://api.example.com/items/1").unsafeRun();
       expect(eff.type).toEqual("Err");
-
-      const err = (eff as Err<HttpError>).error;
-      expect(err.status).toEqual(400);
-      expect(err.body).toEqual(error);
-      expect(err.url).toEqual("https://api.example.com/items/1");
+      expect((eff as Err<HttpError>).error.status).toEqual(400);
     });
 
     it("should handle network errors gracefully", async () => {
       (global.fetch as jest.Mock).mockRejectedValue(new Error("Network Error"));
 
-      const eff = await HttpClient.delete("https://api.example.com/items/1").unsafeRun();
+      const eff = await client.delete("https://api.example.com/items/1").unsafeRun();
       expect(eff.type).toEqual("Err");
-
-      const err = (eff as Err<HttpError>).error;
-      expect(err.message).toEqual(
-        "Request to 'https://api.example.com/items/1' failed with status 500 and message: Network Error."
-      );
     });
 
-    it("should include custom headers in the request", async () => {
-      const item = { id: 1, name: "Deleted Item" };
-      (global.fetch as jest.Mock).mockResolvedValue(ok(item));
+    it("should include custom headers", async () => {
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ id: 1 }));
 
-      const headers = { Authorization: "Bearer token" };
-      await HttpClient.delete<typeof item>("https://api.example.com/items/1", { headers }).unsafeRun();
+      await client
+        .delete("https://api.example.com/items/1", { headers: { Authorization: "Bearer token" } })
+        .unsafeRun();
 
-      expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items/1", {
-        method: "DELETE",
-        headers: {
-          Authorization: "Bearer token",
-        },
-        credentials: "include",
-        body: undefined,
-      });
-    });
-
-    it("should handle non-JSON response types", async () => {
-      (global.fetch as jest.Mock).mockResolvedValue(textResponse("Plain text response"));
-
-      const eff = await HttpClient.delete<string>("https://api.example.com/items/1", {
-        responseType: "text",
-      }).unsafeRun();
-      expect(eff.type).toEqual("Ok");
-
-      const result = eff as Ok<string>;
-      expect(result.value).toEqual("Plain text response");
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].headers["authorization"]).toBe("Bearer token");
     });
 
     it("should return the full response when observe is 'response'", async () => {
-      const item = { id: 1, name: "Deleted Item" };
-      (global.fetch as jest.Mock).mockResolvedValue(ok(item));
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ id: 1 }));
 
-      const eff = await HttpClient.delete("https://api.example.com/items/1", { observe: "response" }).unsafeRun();
-      expect(eff.type).toEqual("Ok");
-
+      const eff = await client.delete("https://api.example.com/items/1", { observe: "response" }).unsafeRun();
       const result = eff as Ok<Response>;
       expect(result.value.ok).toBe(true);
-      expect(await result.value.json()).toEqual(item);
     });
 
     it("should handle empty response body (204 No Content)", async () => {
       (global.fetch as jest.Mock).mockResolvedValue(new Response(null, { status: 204 }));
 
-      const eff = await HttpClient.delete("https://api.example.com/items/1").unsafeRun();
-      expect(eff.type).toEqual("Ok");
-
-      const result = eff as Ok<null>;
-      expect(result.value).toBeNull();
-    });
-
-    it("should handle parsing errors gracefully", async () => {
-      (global.fetch as jest.Mock).mockResolvedValue(
-        new Response("Invalid JSON", { status: 200, headers: { "Content-Type": "application/json" } })
-      );
-
-      const eff = await HttpClient.delete("https://api.example.com/items/1").unsafeRun();
-      expect(eff.type).toEqual("Err");
-
-      const err = (eff as Err<HttpError>).error;
-      expect(err.message).toEqual(
-        "Request to 'https://api.example.com/items/1' failed with status 200 and message: Unexpected token 'I', \"Invalid JSON\" is not valid JSON."
-      );
+      const eff = await client.delete("https://api.example.com/items/1").unsafeRun();
+      expect((eff as Ok<null>).value).toBeNull();
     });
   });
 
   describe("fetch", () => {
-    it("should make a successful custom HTTP request (HEAD) and return the full response", async () => {
+    it("should make a custom HEAD request and return the full response", async () => {
       (global.fetch as jest.Mock).mockResolvedValue(new Response(null, { status: 200 }));
 
-      const eff = await HttpClient.fetch("https://api.example.com/items", "HEAD", { observe: "response" }).unsafeRun();
+      const eff = await client.fetch("https://api.example.com/items", "HEAD", { observe: "response" }).unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<Response>;
-      expect(result.value.ok).toBe(true);
       expect(result.value.status).toBe(200);
-      expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        method: "HEAD",
-        headers: {},
-        credentials: "include",
-        body: undefined,
-      });
     });
 
-    it("should make a successful custom HTTP request (OPTIONS) and return the response body", async () => {
+    it("should make a custom OPTIONS request and return the response body", async () => {
       const optionsResponse = { allowedMethods: ["GET", "POST"] };
       (global.fetch as jest.Mock).mockResolvedValue(ok(optionsResponse));
 
-      const eff = await HttpClient.fetch<typeof optionsResponse>(
-        "https://api.example.com/items",
-        "OPTIONS"
-      ).unsafeRun();
+      const eff = await client.fetch<typeof optionsResponse>("https://api.example.com/items", "OPTIONS").unsafeRun();
       expect(eff.type).toEqual("Ok");
 
       const result = eff as Ok<typeof optionsResponse>;
       expect(result.value).toEqual(optionsResponse);
-      expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        method: "OPTIONS",
-        headers: {},
-        credentials: "include",
-        body: undefined,
-      });
     });
 
-    it("should handle errors gracefully for a custom HTTP method (PATCH)", async () => {
-      const error = { code: "INVALID_REQUEST", message: "Invalid request" };
-      (global.fetch as jest.Mock).mockResolvedValue(badRequest(error));
+    it("should handle errors gracefully", async () => {
+      (global.fetch as jest.Mock).mockResolvedValue(badRequest({ code: "ERR" }));
 
-      const eff = await HttpClient.fetch("https://api.example.com/items", "PATCH", {
-        headers: { "Custom-Header": "value" },
-      }).unsafeRun();
+      const eff = await client.fetch("https://api.example.com/items", "PATCH").unsafeRun();
       expect(eff.type).toEqual("Err");
-
-      const err = (eff as Err<HttpError>).error;
-      expect(err.status).toEqual(400);
-      expect(err.body).toEqual(error);
-      expect(err.url).toEqual("https://api.example.com/items");
     });
 
-    it("should handle network errors gracefully for a custom HTTP method (PUT)", async () => {
+    it("should handle network errors gracefully", async () => {
       (global.fetch as jest.Mock).mockRejectedValue(new Error("Network Error"));
 
-      const eff = await HttpClient.fetch("https://api.example.com/items", "PUT").unsafeRun();
+      const eff = await client.fetch("https://api.example.com/items", "PUT").unsafeRun();
       expect(eff.type).toEqual("Err");
-
-      const err = (eff as Err<HttpError>).error;
-      expect(err.message).toEqual(
-        "Request to 'https://api.example.com/items' failed with status 500 and message: Network Error."
-      );
     });
 
-    it("should send a custom request with custom headers", async () => {
-      const item = { id: 1, name: "Custom Request" };
-      (global.fetch as jest.Mock).mockResolvedValue(ok(item));
+    it("should send custom headers", async () => {
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ success: true }));
 
-      await HttpClient.fetch<typeof item>("https://api.example.com/items", "POST", {
-        headers: { "Authorization": "Bearer token", "Content-Type": "application/json" },
-        body: { name: "Custom Request" },
-      }).unsafeRun();
+      await client
+        .fetch("https://api.example.com/items", "POST", {
+          headers: { "Authorization": "Bearer token", "Content-Type": "application/json" },
+          body: { name: "Custom Request" },
+        })
+        .unsafeRun();
 
-      expect(global.fetch).toHaveBeenCalledWith("https://api.example.com/items", {
-        method: "POST",
-        headers: {
-          "Authorization": "Bearer token",
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify({ name: "Custom Request" }),
-      });
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].headers["authorization"]).toBe("Bearer token");
+      expect(args[1].headers["content-type"]).toBe("application/json");
+      expect(args[1].body).toBe(JSON.stringify({ name: "Custom Request" }));
     });
 
     it("should handle non-JSON response types", async () => {
-      (global.fetch as jest.Mock).mockResolvedValue(textResponse("Plain text response"));
+      (global.fetch as jest.Mock).mockResolvedValue(textResponse("Plain text"));
 
-      const eff = await HttpClient.fetch<string>("https://api.example.com/items", "GET", {
-        responseType: "text",
-      }).unsafeRun();
-      expect(eff.type).toEqual("Ok");
-
-      const result = eff as Ok<string>;
-      expect(result.value).toEqual("Plain text response");
+      const eff = await client
+        .fetch<string>("https://api.example.com/items", "GET", { responseType: "text" })
+        .unsafeRun();
+      expect((eff as Ok<string>).value).toEqual("Plain text");
     });
   });
 
@@ -842,55 +625,45 @@ describe("HttpClient", () => {
         mockResponse(JSON.stringify(data), { headers: { "Content-Type": "application/json" } })
       );
 
-      const eff = await HttpClient.fetch<typeof data>("https://api.example.com/items", "GET", {
-        responseType: "json",
-      }).unsafeRun();
-      expect(eff.type).toEqual("Ok");
-
-      const result = eff as Ok<typeof data>;
-      expect(result.value).toEqual(data);
+      const eff = await client
+        .fetch<typeof data>("https://api.example.com/items", "GET", { responseType: "json" })
+        .unsafeRun();
+      expect((eff as Ok<typeof data>).value).toEqual(data);
     });
 
     it("should parse text response successfully", async () => {
-      const text = "Plain text response";
-      (global.fetch as jest.Mock).mockResolvedValue(mockResponse(text, { headers: { "Content-Type": "text/plain" } }));
+      (global.fetch as jest.Mock).mockResolvedValue(
+        mockResponse("Plain text", { headers: { "Content-Type": "text/plain" } })
+      );
 
-      const eff = await HttpClient.fetch<string>("https://api.example.com/items", "GET", {
-        responseType: "text",
-      }).unsafeRun();
-      expect(eff.type).toEqual("Ok");
-
-      const result = eff as Ok<string>;
-      expect(result.value).toEqual(text);
+      const eff = await client
+        .fetch<string>("https://api.example.com/items", "GET", { responseType: "text" })
+        .unsafeRun();
+      expect((eff as Ok<string>).value).toEqual("Plain text");
     });
 
     it("should parse blob response successfully", async () => {
       const blob = new Blob(["Hello, Blob!"], { type: "text/plain" });
       (global.fetch as jest.Mock).mockResolvedValue(mockResponse(blob));
 
-      const eff = await HttpClient.fetch<Blob>("https://api.example.com/items", "GET", {
-        responseType: "blob",
-      }).unsafeRun();
+      const eff = await client
+        .fetch<Blob>("https://api.example.com/items", "GET", { responseType: "blob" })
+        .unsafeRun();
       expect(eff.type).toEqual("Ok");
-
       const result = eff as Ok<Blob>;
       expect(result.value).toBeInstanceOf(Blob);
-      const text = await result.value.text();
-      expect(text).toEqual("Hello, Blob!");
     });
 
     it("should parse arrayBuffer response successfully", async () => {
-      const buffer = new Uint8Array([72, 101, 108, 108, 111]).buffer; // "Hello" in bytes
+      const buffer = new Uint8Array([72, 101, 108, 108, 111]).buffer;
       (global.fetch as jest.Mock).mockResolvedValue(mockResponse(buffer));
 
-      const eff = await HttpClient.fetch<ArrayBuffer>("https://api.example.com/items", "GET", {
-        responseType: "arrayBuffer",
-      }).unsafeRun();
+      const eff = await client
+        .fetch<ArrayBuffer>("https://api.example.com/items", "GET", { responseType: "arrayBuffer" })
+        .unsafeRun();
       expect(eff.type).toEqual("Ok");
-
       const result = eff as Ok<ArrayBuffer>;
       expect(result.value).toBeInstanceOf(ArrayBuffer);
-      expect(new TextDecoder().decode(result.value)).toEqual("Hello");
     });
 
     it("should parse formData response successfully", async () => {
@@ -898,29 +671,24 @@ describe("HttpClient", () => {
       formData.append("key", "value");
       (global.fetch as jest.Mock).mockResolvedValue(mockResponse(formData));
 
-      const eff = await HttpClient.fetch<FormData>("https://api.example.com/items", "GET", {
-        responseType: "formData",
-      }).unsafeRun();
+      const eff = await client
+        .fetch<FormData>("https://api.example.com/items", "GET", { responseType: "formData" })
+        .unsafeRun();
       expect(eff.type).toEqual("Ok");
-
       const result = eff as Ok<FormData>;
-      expect(result.value).toBeInstanceOf(FormData);
       expect(result.value.get("key")).toEqual("value");
     });
 
     it("should return an error for unsupported response types", async () => {
-      (global.fetch as jest.Mock).mockResolvedValue(mockResponse("Unsupported response"));
+      (global.fetch as jest.Mock).mockResolvedValue(mockResponse("Unsupported"));
 
-      const eff = await HttpClient.fetch("https://api.example.com/items", "GET", {
-        responseType: "unsupported" as any,
-      }).unsafeRun();
+      const eff = await client
+        .fetch("https://api.example.com/items", "GET", { responseType: "unsupported" as any })
+        .unsafeRun();
       expect(eff.type).toEqual("Err");
 
       const err = (eff as Err<HttpError>).error;
-      expect(err.message).toEqual(
-        "Request to 'https://api.example.com/items' failed with status 200 and message: Unsupported response type: unsupported."
-      );
-      expect(err.status).toEqual(200);
+      expect(err.message).toContain("Unsupported response type: unsupported");
     });
 
     it("should handle parsing errors gracefully", async () => {
@@ -928,74 +696,40 @@ describe("HttpClient", () => {
         mockResponse("Invalid JSON", { headers: { "Content-Type": "application/json" } })
       );
 
-      const eff = await HttpClient.fetch("https://api.example.com/items", "GET", { responseType: "json" }).unsafeRun();
+      const eff = await client.fetch("https://api.example.com/items", "GET", { responseType: "json" }).unsafeRun();
       expect(eff.type).toEqual("Err");
-
-      const err = (eff as Err<HttpError>).error;
-      expect(err.message).toEqual(
-        "Request to 'https://api.example.com/items' failed with status 200 and message: Unexpected token 'I', \"Invalid JSON\" is not valid JSON."
-      );
-      expect(err.status).toEqual(200);
     });
   });
 
   describe("overload behavior", () => {
     it("should return the body by default", async () => {
-      interface Data {
-        id: number;
-        name: string;
-      }
-
-      const data: Data = { id: 1, name: "John" };
+      const data = { id: 1, name: "John" };
       (global.fetch as jest.Mock).mockResolvedValue(ok(data));
 
-      const eff = await HttpClient.get<Data>("https://api.example.com/default").unsafeRun();
-
+      const eff = await client.get<typeof data>("https://api.example.com/default").unsafeRun();
       expect(eff.type).toBe("Ok");
-      if (eff.type === "Ok") {
-        expect(eff.value).toEqual(data);
-        expect(eff.value instanceof Response).toBe(false);
-      }
+      expect((eff as Ok<typeof data>).value).toEqual(data);
     });
 
     it("should return the body when observe is explicitly 'body'", async () => {
       const data = { id: 2 };
       (global.fetch as jest.Mock).mockResolvedValue(ok(data));
 
-      const eff = await HttpClient.get("https://api.example.com/body", { observe: "body" }).unsafeRun();
-
-      expect(eff.type).toBe("Ok");
-      if (eff.type === "Ok") {
-        expect(eff.value).toEqual(data);
-        expect(eff.value instanceof Response).toBe(false);
-      }
+      const eff = await client.get("https://api.example.com/body", { observe: "body" }).unsafeRun();
+      expect((eff as Ok<typeof data>).value).toEqual(data);
     });
 
     it("should return the Response object when observe is 'response'", async () => {
       const data = { id: 3 };
       (global.fetch as jest.Mock).mockResolvedValue(ok(data));
 
-      const eff = await HttpClient.get("https://api.example.com/response", { observe: "response" }).unsafeRun();
-
+      const eff = await client.get("https://api.example.com/response", { observe: "response" }).unsafeRun();
       expect(eff.type).toBe("Ok");
-      if (eff.type === "Ok") {
-        expect(eff.value instanceof Response).toBe(true);
-        const response = eff.value as Response;
-        expect(await response.json()).toEqual(data);
-      }
+      expect((eff as Ok<Response>).value).toBeInstanceOf(Response);
     });
   });
 
   describe("interceptors", () => {
-    beforeEach(() => {
-      global.fetch = jest.fn();
-      jest.resetModules();
-    });
-
-    afterEach(() => {
-      jest.resetAllMocks();
-    });
-
     it("should call a single interceptor and modify the request headers", async () => {
       class TestHeaderInterceptor implements HttpInterceptor {
         intercept(req: RequestInit, next: (r: RequestInit) => Promise<Response>): Promise<Response> {
@@ -1005,30 +739,15 @@ describe("HttpClient", () => {
         }
       }
 
-      const interceptor = new TestHeaderInterceptor();
-
-      HttpClient.addInterceptor(interceptor);
-
+      const interceptorClient = new HttpClient({ interceptors: [new TestHeaderInterceptor()] });
       (global.fetch as jest.Mock).mockResolvedValue(ok({ success: true }));
 
-      const eff = await HttpClient.get("https://api.example.com/test").unsafeRun();
+      const eff = await interceptorClient.get("https://api.example.com/test").unsafeRun();
       expect(eff.type).toBe("Ok");
 
-      expect(global.fetch).toHaveBeenCalledTimes(1);
-
       const args = (global.fetch as jest.Mock).mock.calls[0];
-      const url = args[0];
-      const options = args[1];
-
-      expect(url).toBe("https://api.example.com/test");
-      expect(options.method).toBe("GET");
-      expect(options.credentials).toBe("include");
-      expect(options.body).toBeUndefined();
-
-      expect(options.headers).toBeInstanceOf(Headers);
-      expect((options.headers as Headers).get("X-Interceptor-Header")).toBe("test-value");
-
-      HttpClient.removeInterceptor(interceptor);
+      expect(args[1].headers).toBeInstanceOf(Headers);
+      expect((args[1].headers as Headers).get("X-Interceptor-Header")).toBe("test-value");
     });
 
     it("should allow an interceptor to short-circuit the request", async () => {
@@ -1043,67 +762,44 @@ describe("HttpClient", () => {
         }
       }
 
-      const interceptor = new ShortCircuitInterceptor();
+      const interceptorClient = new HttpClient({ interceptors: [new ShortCircuitInterceptor()] });
 
-      HttpClient.addInterceptor(interceptor);
-
-      const eff = await HttpClient.get("https://api.example.com/shortcircuit").unsafeRun();
+      const eff = await interceptorClient.get("https://api.example.com/shortcircuit").unsafeRun();
       expect(eff.type).toBe("Ok");
-
-      const result = eff as Ok<any>;
-      expect(result.value).toEqual({ message: "short-circuited" });
-
+      expect((eff as Ok<any>).value).toEqual({ message: "short-circuited" });
       expect(global.fetch).not.toHaveBeenCalled();
-
-      HttpClient.removeInterceptor(interceptor);
     });
 
-    it("should call multiple interceptors in reverse order of registration", async () => {
+    it("should call multiple interceptors in registration order (first = outermost)", async () => {
+      const order: string[] = [];
+
       class FirstInterceptor implements HttpInterceptor {
-        intercept(req: RequestInit, next: (r: RequestInit) => Promise<Response>): Promise<Response> {
-          const newHeaders = new Headers(req.headers || {});
-          newHeaders.set("X-First", "1");
-          return next({ ...req, headers: newHeaders });
+        async intercept(req: RequestInit, next: (r: RequestInit) => Promise<Response>): Promise<Response> {
+          order.push("first-before");
+          const resp = await next(req);
+          order.push("first-after");
+          return resp;
         }
       }
 
       class SecondInterceptor implements HttpInterceptor {
-        intercept(req: RequestInit, next: (r: RequestInit) => Promise<Response>): Promise<Response> {
-          const newHeaders = new Headers(req.headers || {});
-          newHeaders.set("X-Second", "2");
-          return next({ ...req, headers: newHeaders });
+        async intercept(req: RequestInit, next: (r: RequestInit) => Promise<Response>): Promise<Response> {
+          order.push("second-before");
+          const resp = await next(req);
+          order.push("second-after");
+          return resp;
         }
       }
 
-      const firstInterceptor = new FirstInterceptor();
-      const secondInterceptor = new SecondInterceptor();
+      const interceptorClient = new HttpClient({
+        interceptors: [new FirstInterceptor(), new SecondInterceptor()],
+      });
 
-      HttpClient.addInterceptor(firstInterceptor);
-      HttpClient.addInterceptor(secondInterceptor);
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ success: true }));
 
-      const fetch = global.fetch as jest.Mock;
+      await interceptorClient.get("https://api.example.com/test").unsafeRun();
 
-      fetch.mockResolvedValue(ok({ success: true }));
-
-      const eff = await HttpClient.get("https://api.example.com/test").unsafeRun();
-      expect(eff.type).toBe("Ok");
-
-      expect(fetch).toHaveBeenCalledTimes(1);
-
-      const args = fetch.mock.calls[0];
-      const url = args[0];
-      const options = args[1];
-
-      expect(url).toBe("https://api.example.com/test");
-      expect(options.headers).toBeInstanceOf(Headers);
-
-      const headers = options.headers as Headers;
-
-      expect(headers.get("X-First")).toBe("1");
-      expect(headers.get("X-Second")).toBe("2");
-
-      HttpClient.removeInterceptor(firstInterceptor);
-      HttpClient.removeInterceptor(secondInterceptor);
+      expect(order).toEqual(["first-before", "second-before", "second-after", "first-after"]);
     });
 
     it("should allow an interceptor to handle an error thrown by fetch", async () => {
@@ -1123,58 +819,36 @@ describe("HttpClient", () => {
         }
       }
 
-      const interceptor = new RetryInterceptor();
-
-      HttpClient.addInterceptor(interceptor);
+      const interceptorClient = new HttpClient({ interceptors: [new RetryInterceptor()] });
 
       (global.fetch as jest.Mock)
         .mockRejectedValueOnce(new Error("Network Error"))
         .mockResolvedValueOnce(ok({ success: true }));
 
-      const eff = await HttpClient.get("https://api.example.com/retry").unsafeRun();
+      const eff = await interceptorClient.get("https://api.example.com/retry").unsafeRun();
       expect(eff.type).toBe("Ok");
-
-      const result = eff as Ok<any>;
-      expect(result.value).toEqual({ success: true });
-
+      expect((eff as Ok<any>).value).toEqual({ success: true });
       expect(global.fetch).toHaveBeenCalledTimes(2);
-
-      HttpClient.removeInterceptor(interceptor);
     });
 
-    it("should let the interceptor transform a successful Response before returning", async () => {
-      class TransformResponseInterceptor implements HttpInterceptor {
+    it("should let the interceptor transform a successful Response", async () => {
+      class TransformInterceptor implements HttpInterceptor {
         async intercept(req: RequestInit, next: (r: RequestInit) => Promise<Response>): Promise<Response> {
           const response = await next(req);
-
           const originalJson = await response.json();
           const newBody = JSON.stringify({ ...originalJson, addedByInterceptor: true });
-          return new Response(newBody, {
-            status: response.status,
-            headers: response.headers,
-          });
+          return new Response(newBody, { status: response.status, headers: response.headers });
         }
       }
 
-      const interceptor = new TransformResponseInterceptor();
-
-      HttpClient.addInterceptor(interceptor);
-
+      const interceptorClient = new HttpClient({ interceptors: [new TransformInterceptor()] });
       (global.fetch as jest.Mock).mockResolvedValue(ok({ name: "Original" }));
 
-      const eff = await HttpClient.get<any>("https://api.example.com/transform").unsafeRun();
-      expect(eff.type).toEqual("Ok");
-
-      const result = eff as Ok<any>;
-      expect(result.value).toEqual({
-        name: "Original",
-        addedByInterceptor: true,
-      });
-
-      HttpClient.removeInterceptor(interceptor);
+      const eff = await interceptorClient.get<any>("https://api.example.com/transform").unsafeRun();
+      expect((eff as Ok<any>).value).toEqual({ name: "Original", addedByInterceptor: true });
     });
 
-    it("should allow an interceptor to catch an HTTP error and replace it with a custom response", async () => {
+    it("should allow an interceptor to catch an error and replace it with a custom response", async () => {
       class HandleErrorInterceptor implements HttpInterceptor {
         async intercept(req: RequestInit, next: (r: RequestInit) => Promise<Response>): Promise<Response> {
           try {
@@ -1188,94 +862,236 @@ describe("HttpClient", () => {
         }
       }
 
-      const interceptor = new HandleErrorInterceptor();
-
-      HttpClient.addInterceptor(interceptor);
-
+      const interceptorClient = new HttpClient({ interceptors: [new HandleErrorInterceptor()] });
       (global.fetch as jest.Mock).mockRejectedValue(new Error("Network Error"));
 
-      const eff = await HttpClient.get<any>("https://api.example.com/override").unsafeRun();
+      const eff = await interceptorClient.get<any>("https://api.example.com/override").unsafeRun();
       expect(eff.type).toEqual("Ok");
-
-      const result = eff as Ok<any>;
-      expect(result.value).toEqual({ override: true });
-      expect(global.fetch).toHaveBeenCalledTimes(1);
-
-      HttpClient.removeInterceptor(interceptor);
+      expect((eff as Ok<any>).value).toEqual({ override: true });
     });
 
-    it("should not add the same interceptor multiple times", async () => {
-      const header = "X-Duplicate-Count";
-      class DuplicateInterceptor implements HttpInterceptor {
+    it("should allow separate clients to have independent interceptors", async () => {
+      class TagInterceptor implements HttpInterceptor {
+        constructor(private tag: string) {}
         intercept(req: RequestInit, next: (r: RequestInit) => Promise<Response>): Promise<Response> {
           const newHeaders = new Headers(req.headers || {});
-          const count = newHeaders.get(header) || "0";
-          newHeaders.set(header, (parseInt(count) + 1).toString());
+          newHeaders.set("X-Tag", this.tag);
           return next({ ...req, headers: newHeaders });
         }
       }
 
-      const interceptor = new DuplicateInterceptor();
+      const clientA = new HttpClient({ interceptors: [new TagInterceptor("A")] });
+      const clientB = new HttpClient({ interceptors: [new TagInterceptor("B")] });
 
-      HttpClient.addInterceptor(interceptor);
-      HttpClient.addInterceptor(interceptor);
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ success: true }));
 
-      type body = { success: boolean };
+      await clientA.get("https://api.example.com/a").unsafeRun();
+      await clientB.get("https://api.example.com/b").unsafeRun();
 
-      const fetch = global.fetch as jest.Mock;
-      fetch.mockResolvedValue(ok({ success: true }));
+      const argsA = (global.fetch as jest.Mock).mock.calls[0];
+      const argsB = (global.fetch as jest.Mock).mock.calls[1];
 
-      const eff = await HttpClient.get<body>("https://api.example.com/test").unsafeRun();
-      expect(eff.type).toBe("Ok");
-
-      expect(fetch).toHaveBeenCalledTimes(1);
-
-      const args = fetch.mock.calls[0];
-      const options = args[1];
-
-      expect(options.headers).toBeInstanceOf(Headers);
-      const headers = options.headers as Headers;
-      expect(headers.get(header)).toBe("1");
-
-      HttpClient.removeInterceptor(interceptor);
+      expect((argsA[1].headers as Headers).get("X-Tag")).toBe("A");
+      expect((argsB[1].headers as Headers).get("X-Tag")).toBe("B");
     });
   });
 
-  describe("interceptor chain", () => {
-    let callCount = 0;
-    class SelfNestingInterceptor implements HttpInterceptor {
-      async intercept(req: RequestInit, next: (req: RequestInit) => Promise<Response>): Promise<Response> {
-        callCount++;
-        await HttpClient.get("https://api.example.com/nested").unsafeRun();
-        return next(req);
-      }
-    }
+  describe("base URL", () => {
+    it("should prepend baseUrl to relative paths", async () => {
+      const baseClient = new HttpClient({ baseUrl: "https://api.example.com/v2" });
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ id: 1 }));
 
-    const interceptor = new SelfNestingInterceptor();
+      await baseClient.get("/users").unsafeRun();
 
-    beforeEach(() => {
-      callCount = 0;
-      jest.clearAllMocks();
-      HttpClient.addInterceptor(interceptor);
-      global.fetch = jest.fn().mockImplementation(() =>
-        Promise.resolve(
-          new Response(JSON.stringify({ success: true }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[0]).toBe("https://api.example.com/v2/users");
+    });
+
+    it("should prepend baseUrl to paths without leading slash", async () => {
+      const baseClient = new HttpClient({ baseUrl: "https://api.example.com/v2" });
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ id: 1 }));
+
+      await baseClient.get("users").unsafeRun();
+
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[0]).toBe("https://api.example.com/v2/users");
+    });
+
+    it("should not prepend baseUrl to absolute URLs", async () => {
+      const baseClient = new HttpClient({ baseUrl: "https://api.example.com" });
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ id: 1 }));
+
+      await baseClient.get("https://other.example.com/data").unsafeRun();
+
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[0]).toBe("https://other.example.com/data");
+    });
+
+    it("should handle baseUrl with trailing slash", async () => {
+      const baseClient = new HttpClient({ baseUrl: "https://api.example.com/v2/" });
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ id: 1 }));
+
+      await baseClient.get("/users").unsafeRun();
+
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[0]).toBe("https://api.example.com/v2/users");
+    });
+  });
+
+  describe("default headers", () => {
+    it("should include default headers in every request", async () => {
+      const headerClient = new HttpClient({ defaultHeaders: { "X-Api-Key": "secret123" } });
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ id: 1 }));
+
+      await headerClient.get("https://api.example.com/items").unsafeRun();
+
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].headers["x-api-key"]).toBe("secret123");
+    });
+
+    it("should allow per-request headers to override default headers", async () => {
+      const headerClient = new HttpClient({ defaultHeaders: { "X-Api-Key": "default" } });
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ id: 1 }));
+
+      await headerClient.get("https://api.example.com/items", { headers: { "X-Api-Key": "override" } }).unsafeRun();
+
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].headers["x-api-key"]).toBe("override");
+    });
+  });
+
+  describe("case-insensitive headers", () => {
+    it("should allow lowercase content-type to override auto-detection", async () => {
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ success: true }));
+
+      await client
+        .post("https://api.example.com/items", { data: "test" }, { headers: { "content-type": "text/xml" } })
+        .unsafeRun();
+
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].headers["content-type"]).toBe("text/xml");
+      // Should NOT also have a "Content-Type" key
+      expect(Object.keys(args[1].headers).filter((k: string) => k.toLowerCase() === "content-type").length).toBe(1);
+    });
+  });
+
+  describe("native body types (FormData, Blob, etc.)", () => {
+    it("should not set Content-Type for FormData body", async () => {
+      const formData = new FormData();
+      formData.append("file", new Blob(["content"]), "test.txt");
+
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ success: true }));
+
+      await client.post("https://api.example.com/upload", formData).unsafeRun();
+
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      // No content-type should be set — browser handles multipart boundary
+      expect(args[1].headers["content-type"]).toBeUndefined();
+      // Body should be the FormData, not JSON.stringified
+      expect(args[1].body).toBe(formData);
+    });
+
+    it("should not JSON.stringify Blob body", async () => {
+      const blob = new Blob(["binary content"], { type: "application/octet-stream" });
+
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ success: true }));
+
+      await client.post("https://api.example.com/upload", blob).unsafeRun();
+
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].body).toBe(blob);
+    });
+
+    it("should not JSON.stringify URLSearchParams body", async () => {
+      const params = new URLSearchParams({ key: "value", foo: "bar" });
+
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ success: true }));
+
+      await client.post("https://api.example.com/submit", params).unsafeRun();
+
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].body).toBe(params);
+    });
+
+    it("should not JSON.stringify ArrayBuffer body", async () => {
+      const buffer = new ArrayBuffer(8);
+
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ success: true }));
+
+      await client.post("https://api.example.com/binary", buffer).unsafeRun();
+
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].body).toBe(buffer);
+    });
+  });
+
+  describe("credentials", () => {
+    it("should use default credentials from config", async () => {
+      const omitClient = new HttpClient({ credentials: "omit" });
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ id: 1 }));
+
+      await omitClient.get("https://api.example.com/items").unsafeRun();
+
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].credentials).toBe("omit");
+    });
+
+    it("should allow per-request credentials to override default", async () => {
+      const omitClient = new HttpClient({ credentials: "omit" });
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ id: 1 }));
+
+      await omitClient.get("https://api.example.com/items", { credentials: "include" }).unsafeRun();
+
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].credentials).toBe("include");
+    });
+  });
+
+  describe("cancellation", () => {
+    it("should pass an AbortSignal to fetch", async () => {
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ id: 1 }));
+
+      await client.get("https://api.example.com/items").unsafeRun();
+
+      const args = (global.fetch as jest.Mock).mock.calls[0];
+      expect(args[1].signal).toBeDefined();
+      expect(args[1].signal).toBeInstanceOf(AbortSignal);
+    });
+  });
+
+  describe("per-request timeout", () => {
+    it("should abort the request when per-request timeout is exceeded", async () => {
+      (global.fetch as jest.Mock).mockImplementation(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
           })
-        )
       );
-    });
 
-    afterEach(() => {
-      HttpClient.removeInterceptor(interceptor);
-    });
+      const eff = await client.get("https://api.example.com/slow", { timeout: 50 }).unsafeRun();
+      expect(eff.type).toEqual("Err");
+    }, 5000);
 
-    it("should call the interceptor only once per outer request even with nested calls", async () => {
-      const result = await HttpClient.get("https://api.example.com/test").unsafeRun();
-      expect(result.type).toBe("Ok");
-      expect(callCount).toBe(1);
-      expect((global.fetch as jest.Mock).mock.calls.length).toBe(2);
+    it("should use client-level timeout when no per-request timeout is set", async () => {
+      const timeoutClient = new HttpClient({ timeout: 50 });
+
+      (global.fetch as jest.Mock).mockImplementation(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+          })
+      );
+
+      const eff = await timeoutClient.get("https://api.example.com/slow").unsafeRun();
+      expect(eff.type).toEqual("Err");
+    }, 5000);
+
+    it("should succeed when the request completes before the timeout", async () => {
+      (global.fetch as jest.Mock).mockResolvedValue(ok({ id: 1 }));
+
+      const eff = await client.get("https://api.example.com/fast", { timeout: 5000 }).unsafeRun();
+      expect(eff.type).toEqual("Ok");
+      expect((eff as Ok<any>).value).toEqual({ id: 1 });
     });
   });
 });

@@ -2,7 +2,15 @@ export { IO } from "./io";
 export type { Ok, Err, Cancelled, Fiber } from "./io";
 export { NonEmptyList } from "./non-empty-list";
 export type { Nel } from "./non-empty-list";
-export { Schedule, RepeatError, PolicyValidationError, TimeoutError, RetryError, CancellationError } from "./schedule";
+export {
+  Schedule,
+  RepeatError,
+  PolicyValidationError,
+  TimeoutError,
+  RetryError,
+  ConditionalRetryError,
+  CancellationError,
+} from "./schedule";
 export type { Policy } from "./schedule";
 export { Either, Left, Right } from "./either";
 export { Option, None, Some } from "./option";

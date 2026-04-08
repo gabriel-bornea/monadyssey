@@ -1,308 +1,76 @@
 import { IO } from "monadyssey";
-import { Method, Options, ResponseType } from "./options";
-
-const interceptors: HttpInterceptor[] = [];
+import { Credentials, HttpClientConfig, HttpInterceptor, Method, Options, ResponseType } from "./options";
 
 /**
- * Represents an HTTP interceptor that can modify or handle request and response data
- * before and after an outgoing `fetch` call.
- *
- * Interceptors can:
- *  - Transform the `RequestInit` object prior to `fetch`.
- *  - Decide whether to short-circuit the request by returning a custom `Response`.
- *  - Process or modify the `Response` after `fetch` completes.
+ * Returns `true` if the body is a type that the fetch API knows how to send natively.
+ * These types must NOT be JSON.stringified and must NOT have a Content-Type header auto-set
+ * (the browser handles multipart boundaries for FormData, etc.).
  */
-export interface HttpInterceptor {
-  /**
-   * Intercepts an outgoing HTTP request.
-   *
-   * If the interceptor intends to continue with the normal request flow, it should call `next(request)`
-   * with the (optionally modified) `RequestInit`. If the interceptor wants to stop the request entirely
-   * and return a custom result, it can return a `Promise<Response>` without invoking `next`.
-   *
-   * @param request - The configuration object for the pending `fetch` call.
-   * @param next - A function that forwards the request to the next interceptor or to `fetch` if no more interceptors remain.
-   * @returns A Promise of the resulting `Response`. This may be the final `fetch` response or a custom `Response` provided by the interceptor.
-   */
-  intercept(request: RequestInit, next: (req: RequestInit) => Promise<Response>): Promise<Response>;
-}
+const isNativeBody = (body: unknown): boolean =>
+  typeof body !== "object" ||
+  body === null ||
+  body instanceof FormData ||
+  body instanceof Blob ||
+  body instanceof ArrayBuffer ||
+  body instanceof URLSearchParams ||
+  (typeof ReadableStream !== "undefined" && body instanceof ReadableStream) ||
+  ArrayBuffer.isView(body);
 
 /**
- * A composable HTTP client that wraps the native `fetch` API, returning `IO` instances instead of Promises.
- *
- * The `HttpClient` provides methods for executing HTTP requests with various HTTP verbs (`GET`, `POST`, etc.).
- * By returning an `IO`, it enables functional composition, deferred execution, and safer error handling.
- * This approach allows chaining and combining operations while managing errors effectively.
+ * Normalizes header keys to lowercase for case-insensitive comparison.
+ * HTTP header names are case-insensitive per RFC 7230.
  */
-export class HttpClient {
-  /**
-   * Performs a GET request to the specified URI.
-   *
-   * @template A - The expected type of the response body after transformation.
-   * @param {string} uri - The URL to send the GET request to.
-   * @param {Omit<Options<A>, "body">} [options] - Configuration options for the request, excluding the `body`.
-   * @returns {IO<HttpError, Response | A>} - An `IO` representing the result of the request, either a `Response` or the transformed body.
-   */
-  static get(uri: string, options: Omit<Options, "body"> & { observe: "response" }): IO<HttpError, Response>;
-  static get<A = any>(uri: string, options?: Omit<Options<A>, "body">): IO<HttpError, A>;
-  static get<A = any>(uri: string, options?: Omit<Options<A>, "body">): IO<HttpError, Response | A> {
-    return request<A>(uri, "GET", options);
-  }
-
-  /**
-   * Performs a POST request to the specified URI with an optional body.
-   *
-   * @template A - The expected type of the response body after transformation.
-   * @param {string} uri - The URL to send the POST request to.
-   * @param {any} [body] - The payload to send with the request.
-   * @param {Options<A>} [options] - Configuration options for the request.
-   * @returns {IO<HttpError, Response | A>} - An `IO` representing the result of the request, either a `Response` or the transformed body.
-   */
-  static post(uri: string, body: any, options: Options & { observe: "response" }): IO<HttpError, Response>;
-  static post<A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, A>;
-  static post<A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, Response | A> {
-    return request<A>(uri, "POST", { ...options, body });
-  }
-
-  /**
-   * Performs a PUT request to the specified URI with an optional body.
-   *
-   * @template A - The expected type of the response body after transformation.
-   * @param {string} uri - The URL to send the PUT request to.
-   * @param {any} [body] - The payload to send with the request.
-   * @param {Options<A>} [options] - Configuration options for the request.
-   * @returns {IO<HttpError, Response | A>} - An `IO` representing the result of the request, either a `Response` or the transformed body.
-   */
-  static put(uri: string, body: any, options: Options & { observe: "response" }): IO<HttpError, Response>;
-  static put<A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, A>;
-  static put<A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, Response | A> {
-    return request<A>(uri, "PUT", { ...options, body });
-  }
-
-  /**
-   * Performs a PATCH request to the specified URI with an optional body.
-   *
-   * @template A - The expected type of the response body after transformation.
-   * @param {string} uri - The URL to send the PATCH request to.
-   * @param {any} [body] - The payload to send with the request.
-   * @param {Options<A>} [options] - Configuration options for the request.
-   * @returns {IO<HttpError, Response | A>} - An `IO` representing the result of the request, either a `Response` or the transformed body.
-   */
-  static patch(uri: string, body: any, options: Options & { observe: "response" }): IO<HttpError, Response>;
-  static patch<A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, A>;
-  static patch<A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, Response | A> {
-    return request<A>(uri, "PATCH", { ...options, body });
-  }
-
-  /**
-   * Performs a DELETE request to the specified URI.
-   *
-   * @template A - The expected type of the response body after transformation.
-   * @param {string} uri - The URL to send the DELETE request to.
-   * @param {Omit<Options<A>, "body">} [options] - Configuration options for the request, excluding the `body`.
-   * @returns {IO<HttpError, Response | A>} - An `IO` representing the result of the request, either a `Response` or the transformed body.
-   */
-  static delete(uri: string, options: Omit<Options, "body"> & { observe: "response" }): IO<HttpError, Response>;
-  static delete<A = any>(uri: string, options?: Omit<Options<A>, "body">): IO<HttpError, A>;
-  static delete<A = any>(uri: string, options?: Omit<Options<A>, "body">): IO<HttpError, Response | A> {
-    return request<A>(uri, "DELETE", options);
-  }
-
-  /**
-   * Performs a custom HTTP request with the specified method.
-   *
-   * @template A - The expected type of the response body after transformation.
-   * @param {string} uri - The URL to send the request to.
-   * @param {Method} method - The HTTP method to use (e.g., "GET", "POST").
-   * @param {Options<A>} [options] - Configuration options for the request.
-   * @param {"body" | "response"} [options.observe="body"] - Determines if the result should be the parsed body or the full `Response` object.
-   * @returns {IO<HttpError, Response | A>} - An `IO` representing the result of the request, either a `Response` or the transformed body.
-   */
-  static fetch(uri: string, method: Method, options: Options & { observe: "response" }): IO<HttpError, Response>;
-  static fetch<A = any>(uri: string, method: Method, options?: Options<A>): IO<HttpError, A>;
-  static fetch<A = any>(uri: string, method: Method, options: Options<A> = {}): IO<HttpError, Response | A> {
-    return request<A>(uri, method, options);
-  }
-
-  /**
-   * Registers a new `HttpInterceptor` into the interceptor pipeline.
-   *
-   * Interceptors are applied in reverse registration order, meaning the most recently added interceptor
-   * is invoked first. This allows interceptors to wrap and control subsequent interceptors in the chain.
-   *
-   * @param interceptor - The `HttpInterceptor` instance to be registered.
-   */
-  static addInterceptor(interceptor: HttpInterceptor): void {
-    if (!interceptors.includes(interceptor)) {
-      interceptors.push(interceptor);
+const normalizeHeaders = (headers: Record<string, string>): Record<string, string> => {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (value !== undefined) {
+      result[key.toLowerCase()] = value;
     }
   }
-
-  /**
-   * Removes a specific `HttpInterceptor` from the interceptor pipeline.
-   *
-   * This method searches for the provided interceptor instance in the pipeline
-   * and removes it if found. If the interceptor is not present, no action is taken.
-   *
-   * @param interceptor - The `HttpInterceptor` instance to remove from the pipeline.
-   *
-   * @example
-   * const interceptor = new MyInterceptor();
-   * HttpClient.addInterceptor(interceptor);
-   * // Later, if the interceptor is no longer needed:
-   * HttpClient.removeInterceptor(interceptor);
-   */
-  static removeInterceptor(interceptor: HttpInterceptor): void {
-    const index = interceptors.indexOf(interceptor);
-    if (index >= 0) {
-      interceptors.splice(index, 1);
-    }
-  }
-}
-
-/**
- * Represents an HTTP error encountered during a request.
- *
- * `HttpError` extends the native `Error` class and provides additional context
- * such as the HTTP status code, the raw error message, the response body, and the request URL.
- */
-export class HttpError extends Error {
-  /**
-   * The HTTP status code returned by the server.
-   * @type {number}
-   */
-  public readonly status: number;
-
-  /**
-   * The raw error message describing the error.
-   * @type {string}
-   */
-  public readonly rawMessage: string;
-
-  /**
-   * The body of the response associated with the error.
-   * Can be `null` if the body is unavailable.
-   * @type {any}
-   */
-  public readonly body: any;
-
-  /**
-   * The URL of the request that resulted in the error.
-   * @type {string}
-   */
-  public readonly url: string;
-
-  /**
-   * The HTTP headers returned by the server.
-   * @type {Record<string, string>}
-   */
-  public readonly headers?: Record<string, string>;
-
-  constructor(status: number, rawMessage: string, body: any, url: string, headers?: Record<string, string>) {
-    super(`Request to '${url}' failed with status ${status} and message: ${rawMessage}.`);
-
-    this.name = "HttpError";
-    this.status = status;
-    this.rawMessage = rawMessage;
-    this.body = body;
-    this.url = url;
-    this.headers = headers;
-  }
-}
-
-const request = <A = any>(uri: string, method: Method, options: Options<A> = {}): IO<HttpError, Response | A> =>
-  IO.Do(async (bind: <A>(io: IO<HttpError, A>) => Promise<A>) => {
-    const {
-      headers = {},
-      body,
-      responseType = "json",
-      credentials = "include",
-      observe = "body",
-      transform = (data: any) => data as A,
-    } = options;
-
-    const hs = {
-      "Content-Type":
-        body && typeof body === "object" && !headers["Content-Type"] ? "application/json" : headers["Content-Type"],
-      ...headers,
-    };
-
-    const request: RequestInit = {
-      method,
-      headers: hs,
-      credentials,
-      body:
-        method !== "GET" && method !== "HEAD" && body
-          ? hs["Content-Type"] === "application/json"
-            ? JSON.stringify(body)
-            : body
-          : undefined,
-    };
-
-    const response = await bind(
-      IO.lift(() => runInterceptors(request, (req) => fetch(uri, req))).mapErr((e: unknown) => toHttpError(e, uri))
-    );
-
-    if (!response.ok) {
-      const rb = await bind(parse(response, responseType, uri));
-      const headers = extractHeadersFrom(response);
-      return await bind(IO.fail(new HttpError(response.status, response.statusText, rb, uri, headers)));
-    }
-
-    if (observe === "response") {
-      return response;
-    } else {
-      const rb = await bind(parse(response, responseType, uri));
-      return transform(rb) as A;
-    }
-  });
-
-let interceptorChainActive = false;
-
-const runInterceptors = async (req: RequestInit, fn: (req: RequestInit) => Promise<Response>): Promise<Response> => {
-  if (interceptorChainActive) {
-    return fn(req);
-  }
-
-  interceptorChainActive = true;
-  try {
-    let next = fn;
-    for (const interceptor of [...interceptors].reverse()) {
-      const currentNext = next;
-      next = async (req: RequestInit) => {
-        return await interceptor.intercept(req, currentNext);
-      };
-    }
-    return next(req);
-  } finally {
-    interceptorChainActive = false;
-  }
+  return result;
 };
 
-const parse = (response: Response, responseType: ResponseType, url: string): IO<HttpError, any> =>
-  IO.lift(async () => {
-    if (response.status === 204 || response.status === 205) {
-      return null;
+/**
+ * Builds the interceptor chain as a pure function. No global state.
+ * Interceptors are applied in registration order — first registered is outermost.
+ */
+const runInterceptors = (
+  interceptors: readonly HttpInterceptor[],
+  req: RequestInit,
+  fn: (req: RequestInit) => Promise<Response>
+): Promise<Response> => {
+  let next = fn;
+  for (const interceptor of [...interceptors].reverse()) {
+    const currentNext = next;
+    next = (r: RequestInit) => interceptor.intercept(r, currentNext);
+  }
+  return next(req);
+};
+
+const parseBody = async (response: Response, responseType: ResponseType, url: string): Promise<any> => {
+  if (response.status === 204 || response.status === 205) {
+    return null;
+  }
+  try {
+    switch (responseType) {
+      case "json":
+        return await response.json();
+      case "text":
+        return await response.text();
+      case "blob":
+        return await response.blob();
+      case "arrayBuffer":
+        return await response.arrayBuffer();
+      case "formData":
+        return await response.formData();
+      default:
+        throw toHttpError(`Unsupported response type: ${responseType}`, url, response);
     }
-    try {
-      switch (responseType) {
-        case "json":
-          return await response.json();
-        case "text":
-          return await response.text();
-        case "blob":
-          return await response.blob();
-        case "arrayBuffer":
-          return await response.arrayBuffer();
-        case "formData":
-          return await response.formData();
-        default:
-          return Promise.reject(toHttpError(`Unsupported response type: ${responseType}`, url, response));
-      }
-    } catch (e: unknown) {
-      return Promise.reject(toHttpError(e, url, response));
-    }
-  });
+  } catch (e: unknown) {
+    if (e instanceof HttpError) throw e;
+    throw toHttpError(e, url, response);
+  }
+};
 
 const toHttpError = (e: unknown, uri: string, response?: Response): HttpError => {
   const headers = extractHeadersFrom(response);
@@ -321,12 +89,275 @@ const toHttpError = (e: unknown, uri: string, response?: Response): HttpError =>
 };
 
 const extractHeadersFrom = (response?: Response): Record<string, string> => {
-  if (!response) {
-    return {};
-  }
+  if (!response) return {};
   try {
     return Object.fromEntries(response.headers.entries());
   } catch {
     return {};
   }
 };
+
+/**
+ * A composable HTTP client that wraps the native `fetch` API, returning `IO` instances instead of Promises.
+ *
+ * Unlike v1, `HttpClient` is instantiable — each instance carries its own configuration (base URL,
+ * interceptors, default headers, timeout, credentials). This allows different parts of an application
+ * to use independently configured clients.
+ *
+ * All HTTP methods return `IO<HttpError, T>`, enabling lazy execution, functional composition,
+ * and explicit error handling. Cancellation is supported: when an IO is cancelled (via fiber or
+ * timeout), the underlying `fetch` call is aborted through `AbortSignal`.
+ *
+ * @example
+ * const api = new HttpClient({
+ *   baseUrl: "https://api.example.com",
+ *   interceptors: [authInterceptor],
+ *   defaultHeaders: { "Accept": "application/json" },
+ *   timeout: 5000,
+ * });
+ *
+ * const users = api.get<User[]>("/users");
+ */
+export class HttpClient {
+  private readonly interceptors: readonly HttpInterceptor[];
+  private readonly baseUrl: string | undefined;
+  private readonly defaultHeaders: Record<string, string>;
+  private readonly defaultTimeout: number | undefined;
+  private readonly defaultCredentials: Credentials;
+
+  /**
+   * Creates a new HttpClient with the given configuration.
+   *
+   * @param {HttpClientConfig} config - Configuration for the client.
+   */
+  constructor(config: HttpClientConfig = {}) {
+    this.interceptors = Object.freeze([...(config.interceptors ?? [])]);
+    this.baseUrl = config.baseUrl;
+    this.defaultHeaders = config.defaultHeaders ?? {};
+    this.defaultTimeout = config.timeout;
+    this.defaultCredentials = config.credentials ?? "include";
+  }
+
+  /**
+   * Creates a default HttpClient instance with no base URL, no interceptors, and default settings.
+   *
+   * @returns {HttpClient} A new default HttpClient.
+   */
+  static default(): HttpClient {
+    return new HttpClient();
+  }
+
+  /**
+   * Performs a GET request.
+   *
+   * @template A - The expected type of the response body.
+   * @param {string} uri - The URL or path to request.
+   * @param {Omit<Options<A>, "body">} [options] - Request options (excluding body).
+   * @returns {IO<HttpError, A | null>} An IO representing the result.
+   */
+  get(uri: string, options: Omit<Options, "body"> & { observe: "response" }): IO<HttpError, Response>;
+  get<A = any>(uri: string, options?: Omit<Options<A>, "body">): IO<HttpError, A | null>;
+  get<A = any>(uri: string, options?: Omit<Options<A>, "body">): IO<HttpError, Response | A | null> {
+    return this.request<A>(uri, "GET", options);
+  }
+
+  /**
+   * Performs a POST request.
+   *
+   * @template A - The expected type of the response body.
+   * @param {string} uri - The URL or path to request.
+   * @param {any} [body] - The request payload.
+   * @param {Options<A>} [options] - Request options.
+   * @returns {IO<HttpError, A | null>} An IO representing the result.
+   */
+  post(uri: string, body: any, options: Options & { observe: "response" }): IO<HttpError, Response>;
+  post<A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, A | null>;
+  post<A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, Response | A | null> {
+    return this.request<A>(uri, "POST", { ...options, body });
+  }
+
+  /**
+   * Performs a PUT request.
+   *
+   * @template A - The expected type of the response body.
+   * @param {string} uri - The URL or path to request.
+   * @param {any} [body] - The request payload.
+   * @param {Options<A>} [options] - Request options.
+   * @returns {IO<HttpError, A | null>} An IO representing the result.
+   */
+  put(uri: string, body: any, options: Options & { observe: "response" }): IO<HttpError, Response>;
+  put<A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, A | null>;
+  put<A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, Response | A | null> {
+    return this.request<A>(uri, "PUT", { ...options, body });
+  }
+
+  /**
+   * Performs a PATCH request.
+   *
+   * @template A - The expected type of the response body.
+   * @param {string} uri - The URL or path to request.
+   * @param {any} [body] - The request payload.
+   * @param {Options<A>} [options] - Request options.
+   * @returns {IO<HttpError, A | null>} An IO representing the result.
+   */
+  patch(uri: string, body: any, options: Options & { observe: "response" }): IO<HttpError, Response>;
+  patch<A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, A | null>;
+  patch<A = any>(uri: string, body?: any, options?: Options<A>): IO<HttpError, Response | A | null> {
+    return this.request<A>(uri, "PATCH", { ...options, body });
+  }
+
+  /**
+   * Performs a DELETE request.
+   *
+   * @template A - The expected type of the response body.
+   * @param {string} uri - The URL or path to request.
+   * @param {Omit<Options<A>, "body">} [options] - Request options (excluding body).
+   * @returns {IO<HttpError, A | null>} An IO representing the result.
+   */
+  delete(uri: string, options: Omit<Options, "body"> & { observe: "response" }): IO<HttpError, Response>;
+  delete<A = any>(uri: string, options?: Omit<Options<A>, "body">): IO<HttpError, A | null>;
+  delete<A = any>(uri: string, options?: Omit<Options<A>, "body">): IO<HttpError, Response | A | null> {
+    return this.request<A>(uri, "DELETE", options);
+  }
+
+  /**
+   * Performs a custom HTTP request with the specified method.
+   *
+   * @template A - The expected type of the response body.
+   * @param {string} uri - The URL or path to request.
+   * @param {Method} method - The HTTP method.
+   * @param {Options<A>} [options] - Request options.
+   * @returns {IO<HttpError, A | null>} An IO representing the result.
+   */
+  fetch(uri: string, method: Method, options: Options & { observe: "response" }): IO<HttpError, Response>;
+  fetch<A = any>(uri: string, method: Method, options?: Options<A>): IO<HttpError, A | null>;
+  fetch<A = any>(uri: string, method: Method, options: Options<A> = {}): IO<HttpError, Response | A | null> {
+    return this.request<A>(uri, method, options);
+  }
+
+  private resolveUrl(uri: string): string {
+    if (!this.baseUrl) return uri;
+    try {
+      new URL(uri);
+      return uri;
+    } catch {
+      const base = this.baseUrl.endsWith("/") ? this.baseUrl.slice(0, -1) : this.baseUrl;
+      const path = uri.startsWith("/") ? uri : `/${uri}`;
+      return `${base}${path}`;
+    }
+  }
+
+  private request<A = any>(uri: string, method: Method, options: Options<A> = {}): IO<HttpError, Response | A | null> {
+    const resolvedUrl = this.resolveUrl(uri);
+    const timeout = options.timeout ?? this.defaultTimeout;
+
+    return IO.cancellable<HttpError, Response | A | null>(
+      async (signal: AbortSignal) => {
+        const {
+          headers = {},
+          body,
+          responseType = "json",
+          credentials = this.defaultCredentials,
+          observe = "body",
+          transform = (data: any) => data as A,
+        } = options;
+
+        // Merge default headers + per-request headers, all lowercased
+        const mergedHeaders = normalizeHeaders({ ...this.defaultHeaders, ...headers });
+
+        // Auto-detect Content-Type only for plain objects (not FormData, Blob, etc.)
+        const shouldAutoJson =
+          body != null && typeof body === "object" && !isNativeBody(body) && !("content-type" in mergedHeaders);
+
+        if (shouldAutoJson) {
+          mergedHeaders["content-type"] = "application/json";
+        }
+
+        // For FormData, do NOT set Content-Type — the browser sets the multipart boundary
+        if (body instanceof FormData) {
+          delete mergedHeaders["content-type"];
+        }
+
+        // Serialize body
+        const serializedBody =
+          method === "GET" || method === "HEAD" || body == null
+            ? undefined
+            : isNativeBody(body)
+              ? body
+              : mergedHeaders["content-type"] === "application/json"
+                ? JSON.stringify(body)
+                : body;
+
+        // Timeout support: create a child controller that aborts on timeout or parent signal
+        let controller: AbortController | undefined;
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+        const fetchSignal = (() => {
+          if (timeout != null) {
+            controller = new AbortController();
+            const onParentAbort = () => controller!.abort(signal.reason);
+            signal.addEventListener("abort", onParentAbort, { once: true });
+            timeoutId = setTimeout(
+              () => controller!.abort(new DOMException("Request timed out", "TimeoutError")),
+              timeout
+            );
+            return controller.signal;
+          }
+          return signal;
+        })();
+
+        try {
+          const requestInit: RequestInit = {
+            method,
+            headers: mergedHeaders,
+            credentials,
+            body: serializedBody as BodyInit | undefined,
+            signal: fetchSignal,
+          };
+
+          const response = await runInterceptors(this.interceptors, requestInit, (req) => fetch(resolvedUrl, req));
+
+          if (!response.ok) {
+            const rb = await parseBody(response, responseType, resolvedUrl);
+            const respHeaders = extractHeadersFrom(response);
+            throw new HttpError(response.status, response.statusText, rb, resolvedUrl, respHeaders);
+          }
+
+          if (observe === "response") {
+            return response;
+          }
+
+          const rb = await parseBody(response, responseType, resolvedUrl);
+          return transform(rb);
+        } finally {
+          if (timeoutId != null) clearTimeout(timeoutId);
+        }
+      },
+      (e: unknown) => (e instanceof HttpError ? e : toHttpError(e, resolvedUrl))
+    );
+  }
+}
+
+/**
+ * Represents an HTTP error encountered during a request.
+ *
+ * Extends the native `Error` class with additional context: HTTP status code,
+ * raw error message, response body, request URL, and response headers.
+ */
+export class HttpError extends Error {
+  public readonly status: number;
+  public readonly rawMessage: string;
+  public readonly body: any;
+  public readonly url: string;
+  public readonly headers?: Record<string, string>;
+
+  constructor(status: number, rawMessage: string, body: any, url: string, headers?: Record<string, string>) {
+    super(`Request to '${url}' failed with status ${status} and message: ${rawMessage}.`);
+    this.name = "HttpError";
+    this.status = status;
+    this.rawMessage = rawMessage;
+    this.body = body;
+    this.url = url;
+    this.headers = headers;
+  }
+}

@@ -54,13 +54,43 @@ export const defaultPolicy = (
 };
 
 /**
+ * Creates a delay promise that resolves after `ms` milliseconds, or rejects
+ * immediately if the signal is already aborted or fires during the delay.
+ */
+const abortableDelay = <E>(ms: number, signal: AbortSignal, liftE: (error: Error) => E): Promise<void> =>
+  new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(liftE(new CancellationError("Operation was cancelled")));
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+
+    function onAbort() {
+      clearTimeout(timeoutId);
+      reject(liftE(new CancellationError("Operation was cancelled")));
+    }
+
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+
+/**
  * Represents a scheduling strategy for retrying asynchronous operations.
+ *
+ * Schedule integrates with IO's cancellation model through `AbortSignal`. When an IO
+ * running a scheduled operation is cancelled (via `fiber.cancel()` or `IO.timeout`),
+ * the signal propagates into the schedule's delay loops and aborts them immediately.
+ *
+ * The manual `cancel()` method is still supported for standalone usage outside IO.
  *
  * @template A - The type of the result returned by the asynchronous operations.
  */
 export class Schedule {
   private readonly policy: Policy;
-  private cancelled: boolean = false;
+  private readonly controller: AbortController = new AbortController();
 
   /**
    * Constructs a new Schedule instance.
@@ -92,7 +122,12 @@ export class Schedule {
    * Wraps an IO operation with retry logic based on a defined policy and a specific condition.
    * The operation is retried with an increasing delay, which grows according to the policy factor.
    * If an operation exceeds the retry limit or fails due to other reasons, a RetryError is thrown.
-   * Other errors (including TimeoutError, if configured) are propagated immediately.
+   *
+   * Cancellation is supported through two mechanisms:
+   * - **IO signal**: When the IO running this schedule is cancelled (fiber, timeout), the AbortSignal
+   *   propagates and aborts any in-progress delay immediately.
+   * - **Manual cancel()**: Calling `schedule.cancel()` aborts the internal controller, which has the
+   *   same effect.
    *
    * @template E The error type inside the IO.
    * @template A The potential result of the IO operation.
@@ -106,56 +141,67 @@ export class Schedule {
    */
   retryIf<E, A>(eff: IO<E, A>, condition: (error: E) => boolean, liftE: (error: Error) => E): IO<E, A> {
     const policy = this.policy;
-    return IO.lift<E, A>(async () => {
-      let attempt = 0;
-      let delay = policy.delay;
-      let timeoutId: NodeJS.Timeout | null = null;
+    const manualSignal = this.controller.signal;
 
-      while (attempt < policy.recurs) {
-        if (this.cancelled) {
-          if (timeoutId) {
-            clearTimeout(timeoutId);
-          }
-          return Promise.reject(liftE(new CancellationError("Operation was cancelled")));
+    return IO.cancellable<E, A>(
+      async (ioSignal: AbortSignal) => {
+        // Merge IO signal and manual cancel signal: abort when either fires
+        const merged = new AbortController();
+        const abortMerged = () => merged.abort();
+
+        if (ioSignal.aborted || manualSignal.aborted) {
+          throw liftE(new CancellationError("Operation was cancelled"));
         }
 
-        const result = await this.withTimeout(eff, liftE).unsafeRun();
-        if (result.type === "Ok") {
-          return result.value;
-        }
-        const error = result.error;
+        ioSignal.addEventListener("abort", abortMerged, { once: true });
+        manualSignal.addEventListener("abort", abortMerged, { once: true });
 
-        let shouldRetry: boolean;
         try {
-          shouldRetry = condition(error);
-        } catch (conditionError) {
-          return Promise.reject(
-            liftE(
-              new ConditionalRetryError(
-                `Retry condition threw: ${conditionError instanceof Error ? conditionError.message : String(conditionError)}`
-              )
-            )
-          );
-        }
+          let attempt = 0;
+          let delay = policy.delay;
 
-        if (!shouldRetry) {
-          return Promise.reject(liftE(new ConditionalRetryError(`Retry condition not met: ${error}`)));
-        }
-        if (attempt >= policy.recurs - 1) {
-          return Promise.reject(liftE(new RetryError(`Retry limit reached without success: ${error}`)));
-        }
-        await new Promise<void>((resolve, reject) => {
-          timeoutId = setTimeout(resolve, this.applyJitter(delay));
-          if (this.cancelled) {
-            clearTimeout(timeoutId);
-            reject(liftE(new CancellationError("Operation was cancelled")));
+          while (attempt < policy.recurs) {
+            if (merged.signal.aborted) {
+              throw liftE(new CancellationError("Operation was cancelled"));
+            }
+
+            const result = await this.withTimeout(eff, liftE).unsafeRun();
+            if (result.type === "Ok") {
+              return result.value;
+            }
+            const error = result.error;
+
+            let shouldRetry: boolean;
+            try {
+              shouldRetry = condition(error);
+            } catch (conditionError) {
+              throw liftE(
+                new ConditionalRetryError(
+                  `Retry condition threw: ${conditionError instanceof Error ? conditionError.message : String(conditionError)}`
+                )
+              );
+            }
+
+            if (!shouldRetry) {
+              throw liftE(new ConditionalRetryError(`Retry condition not met: ${error}`));
+            }
+            if (attempt >= policy.recurs - 1) {
+              throw liftE(new RetryError(`Retry limit reached without success: ${error}`));
+            }
+
+            await abortableDelay(this.applyJitter(delay), merged.signal, liftE);
+
+            delay *= policy.factor;
+            attempt++;
           }
-        });
-        delay *= policy.factor;
-        attempt++;
-      }
-      return Promise.reject(liftE(new RetryError("Retry limit reached without success")));
-    });
+          throw liftE(new RetryError("Retry limit reached without success"));
+        } finally {
+          ioSignal.removeEventListener("abort", abortMerged);
+          manualSignal.removeEventListener("abort", abortMerged);
+        }
+      },
+      (e: unknown) => (isLiftedError<E>(e) ? e : liftE(e instanceof Error ? e : new Error(String(e))))
+    );
   }
 
   /**
@@ -164,7 +210,7 @@ export class Schedule {
    * Repeats the execution of an IO action based on a defined scheduling policy.
    * If the IO action succeeds, it is executed again until it either fails or the policy determines the execution should stop.
    *
-   * The function returns the result of the last successful execution or throws a RepeatError.
+   * Cancellation is supported through both the IO signal and `schedule.cancel()`.
    *
    * @template E The error type inside the IO.
    * @template A The potential result of the IO action.
@@ -177,42 +223,57 @@ export class Schedule {
    */
   repeat<E, A>(eff: IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
     const policy = this.policy;
+    const manualSignal = this.controller.signal;
 
-    return IO.lift(async () => {
-      let timeoutId: NodeJS.Timeout | null = null;
-      let hasResult = false;
-      let lastSuccessResult: A | undefined;
-      let delay = policy.delay;
+    return IO.cancellable<E, A>(
+      async (ioSignal: AbortSignal) => {
+        const merged = new AbortController();
+        const abortMerged = () => merged.abort();
 
-      for (let attempt = 0; attempt < policy.recurs; attempt++) {
-        if (this.cancelled) {
-          if (timeoutId) {
-            clearTimeout(timeoutId);
-          }
-          return Promise.reject(liftE(new CancellationError("Operation was cancelled")));
+        if (ioSignal.aborted || manualSignal.aborted) {
+          throw liftE(new CancellationError("Operation was cancelled"));
         }
 
-        const result = await this.withTimeout(eff, liftE).unsafeRun();
+        ioSignal.addEventListener("abort", abortMerged, { once: true });
+        manualSignal.addEventListener("abort", abortMerged, { once: true });
 
-        if (result.type === "Ok") {
-          hasResult = true;
-          lastSuccessResult = result.value;
+        try {
+          let hasResult = false;
+          let lastSuccessResult: A | undefined;
+          let delay = policy.delay;
 
-          if (attempt < policy.recurs - 1) {
-            await new Promise<void>((resolve) => (timeoutId = setTimeout(resolve, this.applyJitter(delay))));
-            delay *= policy.factor;
+          for (let attempt = 0; attempt < policy.recurs; attempt++) {
+            if (merged.signal.aborted) {
+              throw liftE(new CancellationError("Operation was cancelled"));
+            }
+
+            const result = await this.withTimeout(eff, liftE).unsafeRun();
+
+            if (result.type === "Ok") {
+              hasResult = true;
+              lastSuccessResult = result.value;
+
+              if (attempt < policy.recurs - 1) {
+                await abortableDelay(this.applyJitter(delay), merged.signal, liftE);
+                delay *= policy.factor;
+              }
+            } else {
+              throw liftE(new RepeatError(`Failed to execute repeat: ${result.error}`));
+            }
           }
-        } else {
-          return Promise.reject(liftE(new RepeatError(`Failed to execute repeat: ${result.error}`)));
+
+          if (hasResult) {
+            return lastSuccessResult as A;
+          }
+
+          throw liftE(new RepeatError("The function provided never succeeded"));
+        } finally {
+          ioSignal.removeEventListener("abort", abortMerged);
+          manualSignal.removeEventListener("abort", abortMerged);
         }
-      }
-
-      if (hasResult) {
-        return lastSuccessResult as A;
-      }
-
-      return Promise.reject(liftE(new RepeatError("The function provided never succeeded")));
-    });
+      },
+      (e: unknown) => (isLiftedError<E>(e) ? e : liftE(e instanceof Error ? e : new Error(String(e))))
+    );
   }
 
   /**
@@ -221,7 +282,6 @@ export class Schedule {
    * Wraps an IO operation with an optional timeout configured by the scheduler policy.
    * If a valid timeout is provided and the operation exceeds this time,
    * it encapsulates a TimeoutError within the IO instance.
-   * Otherwise, it proceeds as normal.
    *
    * @template E The error type inside the IO.
    * @template A The potential result of the IO operation.
@@ -272,25 +332,21 @@ export class Schedule {
   }
 
   /**
-   * Cancels the ongoing scheduled operation. It should be used to stop the execution
-   * of scheduled operations in response to changing conditions or to free up resources.
+   * Cancels the ongoing scheduled operation. Aborts any in-progress delay immediately.
+   *
+   * This works both when the schedule is used standalone and when it's running inside an IO.
+   * For IO-managed schedules (via `retryIf` on IO), cancellation through `fiber.cancel()` or
+   * `IO.timeout` is preferred — it automatically propagates through the AbortSignal.
    *
    * @example
    * const schedule = new Schedule();
-   * const operation = () => IO.lift(() => performOperation());
-   * const retryCondition = () => true;
-   * const errorLifter = (error: Error) => new CustomError(error.message);
+   * const operation = schedule.retryIf(eff, () => true, e => e);
    *
-   * const retryIO = schedule.retryIf(operation, retryCondition, errorLifter);
-   * // Cancel the operation after a short delay
-   * setTimeout(() => {
-   *   schedule.cancel();
-   * }, 150);
-   *
-   * const result = await retryIO.unsafeRun();
+   * setTimeout(() => schedule.cancel(), 150);
+   * const result = await operation.unsafeRun();
    */
   cancel(): void {
-    this.cancelled = true;
+    this.controller.abort();
   }
 
   private applyJitter(delay: number): number {
@@ -302,9 +358,21 @@ export class Schedule {
 }
 
 /**
+ * Type guard: returns true if the value was already lifted through `liftE` and should not be double-wrapped.
+ * We detect this by checking if the value is NOT a plain Error subclass from this module.
+ */
+const isLiftedError = <E>(e: unknown): e is E =>
+  !(
+    e instanceof CancellationError ||
+    e instanceof RetryError ||
+    e instanceof RepeatError ||
+    e instanceof ConditionalRetryError ||
+    e instanceof TimeoutError ||
+    e instanceof PolicyValidationError
+  );
+
+/**
  * Represents an error related to invalid scheduling policy configurations.
- * This error is thrown when a policy is configured with invalid parameters.
- *
  * @extends Error
  */
 export class PolicyValidationError extends Error {
@@ -316,8 +384,6 @@ export class PolicyValidationError extends Error {
 
 /**
  * Represents an error that occurs when an operation exceeds the allowed timeout limit.
- * This error is thrown when a scheduled operation does not complete within the specified timeout duration.
- *
  * @extends Error
  */
 export class TimeoutError extends Error {
@@ -328,8 +394,7 @@ export class TimeoutError extends Error {
 }
 
 /**
- * Represents an error that occurs when a retry operation stops because the specified retry condition is not met.
- *
+ * Represents an error that occurs when a retry condition is not met or the condition function itself throws.
  * @extends Error
  */
 export class ConditionalRetryError extends Error {
@@ -340,9 +405,7 @@ export class ConditionalRetryError extends Error {
 }
 
 /**
- * Represents an error that occurs when the maximum number of retries is reached without successful completion of an operation.
- * This error is thrown when a retryable operation fails to succeed within the allowed number of attempts as defined by the policy.
- *
+ * Represents an error that occurs when the maximum number of retries is reached.
  * @extends Error
  */
 export class RetryError extends Error {
@@ -353,9 +416,7 @@ export class RetryError extends Error {
 }
 
 /**
- * Represents an error that occurs during the repetition of an operation, if the operation fails or if it cannot be repeated according to the policy.
- * This error is thrown when a repeated operation fails, or if the repeat logic encounters a condition that prevents further repetitions.
- *
+ * Represents an error that occurs during the repetition of an operation.
  * @extends Error
  */
 export class RepeatError extends Error {
@@ -367,8 +428,6 @@ export class RepeatError extends Error {
 
 /**
  * Represents an error that occurs when an operation is cancelled.
- * This error is thrown when a scheduled operation is explicitly cancelled by the user.
- *
  * @extends Error
  */
 export class CancellationError extends Error {

@@ -1,194 +1,368 @@
-### Introduction to `HttpClient`
+# HttpClient
 
-In modern frontend applications, fetching data from backends via HTTP is a common requirement. However, making HTTP 
-calls introduces side effects, which can complicate application logic, especially when dealing with error handling, 
-retries, or request customization. To address these challenges, `monadyssey` introduces a dedicated module tailored 
-for HTTP operations, offering a functional wrapper around the native `fetch` API. This ensures side effects are 
-encapsulated and managed through the use of the `IO` data type.
+`HttpClient` is a composable HTTP client that wraps the native `fetch` API, returning `IO` instances instead of Promises. Each instance carries its own configuration — base URL, interceptors, default headers, timeout, and credentials — allowing different parts of an application to use independently configured clients.
 
-This approach offers several benefits. Instead of immediately executing an HTTP request, it returns a lazy value, 
-allowing precise control over when the operation is executed. Another significant advantage is the explicit handling of 
-errors, eliminating the need for scattered `try/catch` blocks and making failures easier to manage. Additionally, 
-because the result is an `IO`, the operation can be seamlessly composed with other asynchronous or effectful computations,
-enabling structured and maintainable flows.
+All HTTP methods return `IO<HttpError, T>`, enabling lazy execution, functional composition, and explicit error handling. Cancellation is supported: when an IO is cancelled (via fiber or timeout), the underlying `fetch` call is aborted through `AbortSignal`.
 
-With support for common methods like `get`, `post`, `put`, `patch`, `delete`, or a more customizable `fetch`, the client 
-offers flexibility for both standard and advanced HTTP interactions. Configuration options like headers, response types, 
-and payload transformations make it easy to tailor requests while maintaining clean and declarative flows.
-
-### Making a GET Request
-The `get` method allows us to perform a simple `HTTP GET` request while leveraging the benefits of lazy and 
-composable computations. It takes the target URL as its first parameter and optionally accepts configuration options 
-like headers or response transformations.
 ```typescript
 import { HttpClient } from "monadyssey-fetch";
-
-type User = { id: number; name: string }
-
-const operation = HttpClient.get<User>("https://api.example.com/users/1");
 ```
-At this point, nothing has happened yet. The operation merely describes what we want to do—it defines the HTTP request, 
-but it has not been executed.
 
-Without specifying any additional options, this request will return either a `User` object or an error if something goes
-wrong during the execution.
+---
 
-By default, the client assumes the following options for the request:
+## Table of Contents
 
-* `responseType = "json"`: The response is expected to be in JSON format and will be parsed accordingly.
-* `credentials = "include"`: Cookies and credentials will be included with the request.
-* `observe = "body"`: Only the parsed body of the response is returned, rather than the full `Response` object.
+- [Creating a Client](#creating-a-client)
+- [HTTP Methods](#http-methods)
+- [Options](#options)
+- [Running Requests](#running-requests)
+- [Base URL](#base-url)
+- [Default Headers](#default-headers)
+- [Timeout](#timeout)
+- [Cancellation](#cancellation)
+- [Native Body Types](#native-body-types)
+- [Interceptors](#interceptors)
+- [Error Handling](#error-handling)
 
-These defaults provide sensible behavior for most use cases, but of course, these default values may not suit every scenario.
+---
 
-#### Key Features of Options
+## Creating a Client
 
-- **Headers**
-  * Use the `headers` property to add custom key-value pairs for HTTP headers. This is particularly useful for setting 
-authorization tokens, custom content types, or any additional metadata required by your API.
-- **Response Type**
-  * The `responseType` specifies the format of the expected response. Defaults to `"json"`, but you can set it to 
-`"text"`, `"blob"`, `"arrayBuffer"`, or `"formData"` depending on the API response.
-- **Credentials**
-  * The `credentials` property determines whether cookies and authentication data are sent with the request. It 
-defaults to `"include"` but can be set to `"omit"` or `"same-origin"` based on your security requirements.
-- **Observe**
-  * By default, the client returns the parsed response body (`observe: "body"`). However, you can set observe: 
-`"response"` to access the full `Response` object, giving you details like status codes and headers.
-- **Transform**
-  * The `transform` function lets you manipulate the response data before it is returned. This is handy for reshaping 
-or validating the data to match your application's requirements.
+### Constructor
 
-Let’s assume we need to retrieve the latitude and longitude of a user using a third-party service. Instead of getting 
-just the parsed response, we want to access the entire Response object. Additionally, since this service does not 
-require authentication, we’ll omit credentials, and for demonstration purposes, we’ll add a custom header.
+Creates an `HttpClient` with the given configuration. All fields are optional.
 
 ```typescript
-import { HttpClient } from "monadyssey-fetch";
+constructor(config?: HttpClientConfig)
+```
 
-const operation = HttpClient.get("https://api.example.com/location", {
-  headers: {
-    "X-Custom-Header": "MyCustomValue", // Adding a custom header
-  },
-  credentials: "omit", // Omitting credentials as authentication is not required
-  observe: "response", // Retrieving the full Response object instead of just the body
+```typescript
+const api = new HttpClient({
+  baseUrl: "https://api.example.com/v2",
+  interceptors: [authInterceptor, loggingInterceptor],
+  defaultHeaders: { "Accept": "application/json" },
+  timeout: 5000,
+  credentials: "include",
 });
 ```
-In case something goes wrong, the error type returned is `HttpError`. This class extends the native `Error` and enriches 
-it with additional context, making it easier to debug and handle HTTP errors effectively.
 
-#### The HttpError includes:
+---
 
-* `status`: The HTTP status code returned by the server (e.g., 404 for Not Found, 500 for Internal Server Error).
-* `message`: A custom message containing the `url`, `status` and `rawMessage`.
-* `rawMessage`: The raw error message describing what went wrong.
-* `body`: The response body, if available, which may contain further details about the error.
-* `url`: The URL of the request that caused the error.
-* `headers`: The HTTP headers returned by the server, if available. In some cases, such as internal errors, the headers may not be included.
+### `HttpClient.default()`
 
-### Custom Requests with `fetch`
-The `fetch` method provides a way to perform custom HTTP requests with any HTTP method, offering full flexibility and 
-control. This method is particularly useful for scenarios where predefined methods like `get` or `post` aren't sufficient.
+Creates a default instance with no base URL, no interceptors, and standard defaults.
 
-#### Key Features of fetch:
-
-* Allows specifying the HTTP method (GET, POST, PUT, DELETE, etc.).
-* Accepts an optional `Options` object for configuring headers, response type, credentials, and transformations.
-
-Provides the option to observe either the parsed body (observe: "body") or the full Response object (observe: "response").
 ```typescript
-import { HttpClient } from "monadyssey-fetch";
-
-const operation = HttpClient.fetch<{ message: string }>(
-  "https://api.example.com/custom-endpoint",
-  "PUT",
-  {
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key: "value" }),
-    observe: "response",
-  }
-);
+const client = HttpClient.default();
 ```
 
-### Executing the Operation
+Equivalent to `new HttpClient()`.
 
-Since the `get` method returns an `IO`, we have multiple ways to execute the operation and handle its result:
+---
 
-* `runAsync`: Executes the operation asynchronously and returns a `Promise` of the result.
-* `fold`: Allows you to handle both success and error cases in a single operation by providing two functions—one for each case.
-
-You can explore these methods and others in more detail in the [documentation](../monadyssey-core/io.md).
-
-#### Http Interceptors
-
-When performing HTTP requests, we often encounter recurring tasks such as adding headers for access tokens or other 
-authorization data. Handling these operations manually for every request can quickly become repetitive and error-prone.
-Another common scenario is logging response details, such as status codes or other relevant information. Without a 
-structured approach, these non-functional requirements could bloat our codebase, cluttering business logic with 
-repetitive actions and making the code harder to maintain.
-
-To address this, the HTTP client introduces the well-known concept of interceptors. Interceptors allow us to centralize 
-recurring tasks, into reusable components. This keeps our codebase clean and focused, eliminating the need to repeat 
-non-functional actions for every request.
-
-An interceptor is defined as an interface that must be implemented within our application. They allow us to modify or 
-handle HTTP requests and responses at a centralized point.
-
-They can:
-
-* *Transform Requests*: Modify the RequestInit object (e.g., add headers, adjust payloads).
-* *Short-Circuit Requests*: Provide a custom Response without reaching the server.
-* *Modify Responses*: Process the Response object after the fetch completes.
-
-Defining an interceptor involves implementing the `HttpInterceptor` interface and providing custom logic within the 
-`intercept` method. For example, an interceptor that adds a custom header to every request could be implemented as follows:
+### `HttpClientConfig`
 
 ```typescript
-class AddCustomHeaderInterceptor implements HttpInterceptor {
+type HttpClientConfig = {
+  baseUrl?: string;
+  interceptors?: HttpInterceptor[];
+  defaultHeaders?: Record<string, string>;
+  timeout?: number;
+  credentials?: Credentials;
+};
+```
+
+| Field | Default | Description |
+|---|---|---|
+| `baseUrl` | none | Prepended to relative paths |
+| `interceptors` | `[]` | Applied in registration order. Immutable after construction |
+| `defaultHeaders` | `{}` | Merged into every request. Per-request headers take precedence |
+| `timeout` | none | Default timeout in milliseconds for all requests |
+| `credentials` | `"include"` | Default credentials policy |
+
+---
+
+## HTTP Methods
+
+All methods are instance methods and return `IO<HttpError, A | null>`.
+
+The return type includes `| null` because responses with status 204 or 205 return `null`.
+
+```typescript
+get<A>(uri: string, options?: Options<A>): IO<HttpError, A | null>
+post<A>(uri: string, body?: any, options?: Options<A>): IO<HttpError, A | null>
+put<A>(uri: string, body?: any, options?: Options<A>): IO<HttpError, A | null>
+patch<A>(uri: string, body?: any, options?: Options<A>): IO<HttpError, A | null>
+delete<A>(uri: string, options?: Options<A>): IO<HttpError, A | null>
+fetch<A>(uri: string, method: Method, options?: Options<A>): IO<HttpError, A | null>
+```
+
+When `observe: "response"` is set, the return type is `IO<HttpError, Response>`:
+
+```typescript
+client.get(uri, { observe: "response" }): IO<HttpError, Response>
+```
+
+---
+
+## Options
+
+Per-request configuration:
+
+```typescript
+type Options<A = any> = {
+  headers?: Record<string, string>;
+  body?: any;
+  responseType?: ResponseType;
+  credentials?: Credentials;
+  observe?: Observe;
+  transform?: (data: any) => A;
+  timeout?: number;
+};
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `headers` | `{}` | Custom headers. Merged with default headers (per-request wins). All keys are normalized to lowercase |
+| `body` | none | Request payload. Objects are JSON-stringified unless they are native body types (FormData, Blob, etc.) |
+| `responseType` | `"json"` | How to parse the response: `"json"`, `"text"`, `"blob"`, `"arrayBuffer"`, `"formData"` |
+| `credentials` | client default | Overrides the client-level credentials policy |
+| `observe` | `"body"` | `"body"` returns parsed data, `"response"` returns the raw `Response` |
+| `transform` | identity | Transform the parsed response body before returning |
+| `timeout` | client default | Per-request timeout in milliseconds. Overrides the client-level timeout |
+
+---
+
+## Running Requests
+
+Since HTTP methods return `IO`, nothing executes until you run the IO:
+
+```typescript
+const client = new HttpClient({ baseUrl: "https://api.example.com" });
+
+// Get the Result (Ok or Err)
+const result = await client.get<User>("/users/1").unsafeRun();
+
+// Handle both cases with fold
+await client.get<User>("/users/1")
+  .fold(
+    (error) => console.error(error.status, error.rawMessage),
+    (user) => console.log(user)
+  )
+  .unsafeRun();
+
+// Compose with other IO operations
+const operation = client.get<User>("/users/1")
+  .map(user => user?.name)
+  .mapErr(error => new AppError(error.rawMessage));
+```
+
+---
+
+## Base URL
+
+When a `baseUrl` is configured, relative paths are prepended with it. Absolute URLs are left unchanged.
+
+```typescript
+const client = new HttpClient({ baseUrl: "https://api.example.com/v2" });
+
+client.get("/users");                        // → https://api.example.com/v2/users
+client.get("users");                         // → https://api.example.com/v2/users
+client.get("https://other.example.com/data"); // → https://other.example.com/data (unchanged)
+```
+
+---
+
+## Default Headers
+
+Default headers are merged into every request. Per-request headers take precedence. All header keys are normalized to lowercase.
+
+```typescript
+const client = new HttpClient({
+  defaultHeaders: { "X-Api-Key": "secret", "Accept": "application/json" },
+});
+
+// Per-request header overrides default
+client.get("/data", { headers: { "X-Api-Key": "other-secret" } });
+// Sends: { "x-api-key": "other-secret", "accept": "application/json" }
+```
+
+---
+
+## Timeout
+
+Timeout can be set at the client level and overridden per-request. When a timeout fires, the underlying `fetch` call is aborted via `AbortSignal`.
+
+```typescript
+// Client-level timeout
+const client = new HttpClient({ timeout: 5000 });
+
+// Per-request override
+client.get("/slow-endpoint", { timeout: 10000 });
+```
+
+When a request times out, it produces an `Err<HttpError>` with status 500.
+
+---
+
+## Cancellation
+
+`HttpClient` uses `IO.cancellable` internally, so cancelling the IO (via `fiber.cancel()` or `IO.timeout`) aborts the underlying HTTP request. No network resources are wasted.
+
+```typescript
+const client = new HttpClient();
+
+const fiber = client.get<User>("/users/1").fork();
+
+// Later: cancel the request — the HTTP call is aborted
+fiber.cancel();
+```
+
+Combined with `IO.timeout`:
+
+```typescript
+const operation = client.get<User>("/users/1").timeout(3000, () => new TimeoutError());
+```
+
+---
+
+## Native Body Types
+
+`FormData`, `Blob`, `File`, `ArrayBuffer`, `ArrayBufferView`, `URLSearchParams`, and `ReadableStream` are passed directly to `fetch` without JSON serialization.
+
+For `FormData`, no `Content-Type` header is set — the browser handles the multipart boundary automatically.
+
+```typescript
+// File upload
+const formData = new FormData();
+formData.append("file", file);
+
+client.post("/upload", formData);
+// Content-Type is NOT set — browser adds multipart boundary
+
+// Binary data
+const buffer = new ArrayBuffer(1024);
+client.post("/binary", buffer);
+
+// URL-encoded form
+const params = new URLSearchParams({ key: "value" });
+client.post("/submit", params);
+```
+
+For plain objects, `Content-Type: application/json` is auto-detected and the body is JSON-stringified. This auto-detection is skipped when a `Content-Type` header is explicitly provided.
+
+---
+
+## Interceptors
+
+Interceptors modify or handle requests and responses at a centralized point. They are passed at construction time and are immutable — different client instances can have different interceptor stacks.
+
+### Defining an Interceptor
+
+```typescript
+class AuthInterceptor implements HttpInterceptor {
+  constructor(private token: string) {}
+
   intercept(req: RequestInit, next: (r: RequestInit) => Promise<Response>): Promise<Response> {
-    const newHeaders = new Headers(req.headers || {}); // Clone existing headers or initialize if none
-    newHeaders.set("X-Custom-Header", "custom-value"); // Add the custom header
-    return next({ ...req, headers: newHeaders });      // Forward the modified request to the next interceptor or to the actual request
+    const headers = new Headers(req.headers || {});
+    headers.set("Authorization", `Bearer ${this.token}`);
+    return next({ ...req, headers });
   }
 }
 ```
-In this example:
-* The `intercept` method receives the original request (`req`) and a `next` function.
-* It creates a copy of the request `headers`, modifies them to include the custom header, and then calls `next` with the updated request.
-* The `next` function ensures that the modified request continues through the interceptor chain or is ultimately sent.
 
-Defining an interceptor is just the first step—it also needs to be registered with the `HttpClient` to become part of 
-the request pipeline. This can be done by calling:
+### Registering Interceptors
+
+Interceptors are passed in the constructor. The first interceptor registered is the outermost — it sees the request first and the response last.
+
 ```typescript
-HttpClient.addInterceptor(new AddCustomHeaderInterceptor());
+const client = new HttpClient({
+  interceptors: [new AuthInterceptor(token), new LoggingInterceptor()],
+});
 ```
-You can register multiple interceptors with the HttpClient. It's important to note that interceptors are applied 
-in reverse registration order. This means that the most recently added interceptor is invoked first.
 
-This ordering allows interceptors to wrap and control the behavior of subsequent interceptors in the chain, providing 
-flexibility for tasks like modifying requests, handling responses, or even short-circuiting the request flow when necessary.
+### Interceptor Capabilities
 
-Interceptors can also be removed if they are no longer needed. This can be done using the `removeInterceptor` method, 
-which removes a specific interceptor instance from the pipeline:
+- **Transform requests**: Modify headers, body, or other request properties before they reach `fetch`
+- **Short-circuit requests**: Return a custom `Response` without calling `next`
+- **Transform responses**: Modify the `Response` after `fetch` completes
+- **Handle errors**: Catch errors and provide fallback responses or retry logic
+
 ```typescript
-const interceptor = new AddCustomHeaderInterceptor();
-HttpClient.addInterceptor(interceptor);
+// Short-circuit example (cache)
+class CacheInterceptor implements HttpInterceptor {
+  private cache = new Map<string, Response>();
 
-// Later, when the interceptor is no longer necessary
-HttpClient.removeInterceptor(interceptor);
+  async intercept(req: RequestInit, next: (r: RequestInit) => Promise<Response>): Promise<Response> {
+    const cached = this.cache.get(req.url!);
+    if (cached) return cached.clone();
+    const response = await next(req);
+    this.cache.set(req.url!, response.clone());
+    return response;
+  }
+}
+
+// Retry example
+class RetryInterceptor implements HttpInterceptor {
+  async intercept(req: RequestInit, next: (r: RequestInit) => Promise<Response>): Promise<Response> {
+    try {
+      return await next(req);
+    } catch {
+      return await next(req); // one retry
+    }
+  }
+}
 ```
-The `removeInterceptor` method:
 
-* Searches for the provided interceptor instance in the pipeline.
-* Removes it if found; if the instance is not present, no action is taken.
+### Independent Interceptor Stacks
 
-This feature is useful for dynamically managing interceptors in your application, ensuring that the pipeline remains 
-relevant and efficient as your requirements evolve.
+Different clients can have different interceptors:
 
-### Conclusion
-The `monadyssey-fetch` HTTP client offers a functional and composable approach to managing HTTP requests in both 
-frontend and backend applications. By leveraging the `IO` type, it ensures lazy execution and clean separation of 
-concerns. Features like interceptors and customizable options make it highly adaptable to diverse use cases.
+```typescript
+const publicApi = new HttpClient({ baseUrl: "https://public.api.com" });
+const privateApi = new HttpClient({
+  baseUrl: "https://private.api.com",
+  interceptors: [new AuthInterceptor(token)],
+});
+```
 
-Adhering to functional programming principles, it emphasizes explicit error handling, reliance on values over imperative 
-operations, and composability, resulting in a codebase that is clean, maintainable, and robust.
+---
+
+## Error Handling
+
+Errors are represented by `HttpError`, which extends `Error` with additional context:
+
+```typescript
+class HttpError extends Error {
+  readonly status: number;
+  readonly rawMessage: string;
+  readonly body: any;
+  readonly url: string;
+  readonly headers?: Record<string, string>;
+}
+```
+
+| Field | Description |
+|---|---|
+| `status` | HTTP status code. 500 for network errors |
+| `rawMessage` | Raw error description from the server or client |
+| `body` | Parsed response body, if available |
+| `url` | The request URL |
+| `headers` | Response headers, if available |
+| `message` | Formatted string: `"Request to '{url}' failed with status {status} and message: {rawMessage}."` |
+
+Error scenarios:
+
+```typescript
+const client = new HttpClient();
+
+const result = await client.get("/users").unsafeRun();
+
+if (result.type === "Err") {
+  const error = result.error;
+  console.log(error.status);     // 404
+  console.log(error.rawMessage); // "Not Found"
+  console.log(error.body);      // { message: "User not found" }
+  console.log(error.url);       // "https://api.example.com/users"
+}
+```
