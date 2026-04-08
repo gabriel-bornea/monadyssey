@@ -12,10 +12,14 @@
 export abstract class Eval<A> {
   /**
    * Retrieves the value of the operation.
+   * This is an internal method used by the trampoline interpreter. External code should
+   * always use `evaluate()` instead — calling `value()` directly on `Map` or `FlatMap`
+   * nodes throws an `EvaluationError`.
    *
+   * @internal
    * @returns {A} The value produced by the operation.
    */
-  abstract value(): A;
+  protected abstract value(): A;
 
   /**
    * Creates a deferred operation that will be evaluated later.

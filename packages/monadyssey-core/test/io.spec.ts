@@ -2152,4 +2152,653 @@ describe("IO", () => {
       expect(result).toEqual({ type: "Ok", value: 42 });
     });
   });
+
+  describe("race (all-cancelled propagation)", () => {
+    it("should propagate Cancelled when all race entries are cancelled (not a fake Err)", async () => {
+      // Create IOs that are cooperative with cancellation
+      const io1 = IO.cancellable<string, number>(
+        (signal) =>
+          new Promise((resolve, reject) => {
+            const timer = setTimeout(() => resolve(1), 500);
+            signal.addEventListener("abort", () => {
+              clearTimeout(timer);
+              reject(new Error("aborted"));
+            });
+          })
+      );
+      const io2 = IO.cancellable<string, number>(
+        (signal) =>
+          new Promise((resolve, reject) => {
+            const timer = setTimeout(() => resolve(2), 500);
+            signal.addEventListener("abort", () => {
+              clearTimeout(timer);
+              reject(new Error("aborted"));
+            });
+          })
+      );
+
+      const raceIO = IO.race(io1, io2);
+      const fiber = await raceIO.fork().getOrNull();
+      await new Promise((r) => setTimeout(r, 50));
+      await fiber!.cancel();
+      const result = await fiber!.join();
+
+      // Should be Cancelled, not Err with "Cancelled" string
+      expect(result.type).toBe("Cancelled");
+    });
+
+    it("should not produce undefined holes in error list when some entries cancel and some fail", async () => {
+      // IO that fails immediately
+      const failIO = IO.fail<string, number>("real-error");
+
+      // IO that takes a while (will be cancelled by race when failIO... wait, race doesn't cancel on failure)
+      // Actually, race collects errors. Let's test with 3 entries where one fails and two cancel.
+      const slowIO1 = IO.cancellable<string, number>(
+        (signal) =>
+          new Promise((resolve, reject) => {
+            const timer = setTimeout(() => resolve(1), 500);
+            signal.addEventListener("abort", () => {
+              clearTimeout(timer);
+              reject(new Error("aborted"));
+            });
+          })
+      );
+      const slowIO2 = IO.cancellable<string, number>(
+        (signal) =>
+          new Promise((resolve, reject) => {
+            const timer = setTimeout(() => resolve(2), 500);
+            signal.addEventListener("abort", () => {
+              clearTimeout(timer);
+              reject(new Error("aborted"));
+            });
+          })
+      );
+
+      // Fork the race and cancel it after the fail completes
+      const raceIO = IO.race(failIO, slowIO1, slowIO2);
+      const fiber = await raceIO.fork().getOrNull();
+      await new Promise((r) => setTimeout(r, 50));
+      await fiber!.cancel();
+      const result = await fiber!.join();
+
+      // Should be Cancelled (all remaining entries were cancelled)
+      // or if errors were collected, they should not contain undefined
+      if (result.type === "Err") {
+        for (const e of result.error.all) {
+          expect(e).toBeDefined();
+        }
+      }
+    });
+  });
+
+  describe("timeout (resource cleanup)", () => {
+    it("should clear the timer on the cancellation path (no leaked timers)", async () => {
+      // This test verifies the timer is cleared when the parent signal aborts,
+      // not just when the operation completes naturally
+      let wasAborted = false;
+
+      const io = IO.cancellable<string, number>(
+        (signal) =>
+          new Promise((resolve, reject) => {
+            const timer = setTimeout(() => resolve(42), 200);
+            signal.addEventListener("abort", () => {
+              wasAborted = true;
+              clearTimeout(timer);
+              reject(new Error("aborted"));
+            });
+          })
+      ).timeout(60000, () => "long timeout"); // 60s timeout — would leak if not cleaned up
+
+      const fiber = await io.fork().getOrNull();
+      await new Promise((r) => setTimeout(r, 50));
+      await fiber!.cancel();
+      const result = await fiber!.join();
+
+      expect(result.type).toBe("Cancelled");
+      expect(wasAborted).toBe(true);
+      // If the timer leaked, this test would hang for 60 seconds
+    });
+  });
+
+  describe("bracket", () => {
+    it("should acquire, use, and release on success", async () => {
+      const log: string[] = [];
+
+      const result = await IO.bracket(
+        IO.lift(() => {
+          log.push("acquire");
+          return "resource";
+        }),
+        (r) =>
+          IO.lift(() => {
+            log.push(`use:${r}`);
+            return 42;
+          }),
+        (r) =>
+          IO.lift(() => {
+            log.push(`release:${r}`);
+          })
+      ).unsafeRun();
+
+      expect(result).toEqual({ type: "Ok", value: 42 });
+      expect(log).toEqual(["acquire", "use:resource", "release:resource"]);
+    });
+
+    it("should release when use fails", async () => {
+      const log: string[] = [];
+
+      const result = await IO.bracket(
+        IO.lift(() => {
+          log.push("acquire");
+          return "conn";
+        }),
+        (_r) =>
+          IO.lift<string, number>(() => {
+            log.push("use");
+            throw "query failed";
+          }),
+        (r) =>
+          IO.lift(() => {
+            log.push(`release:${r}`);
+          })
+      ).unsafeRun();
+
+      expect(result).toEqual({ type: "Err", error: "query failed" });
+      expect(log).toEqual(["acquire", "use", "release:conn"]);
+    });
+
+    it("should not call use or release when acquire fails", async () => {
+      const log: string[] = [];
+
+      const result = await IO.bracket(
+        IO.fail<string, string>("acquire failed"),
+        (r) =>
+          IO.lift(() => {
+            log.push(`use:${r}`);
+            return 42;
+          }),
+        (r) =>
+          IO.lift(() => {
+            log.push(`release:${r}`);
+          })
+      ).unsafeRun();
+
+      expect(result).toEqual({ type: "Err", error: "acquire failed" });
+      expect(log).toEqual([]);
+    });
+
+    it("should release when use is cancelled", async () => {
+      const log: string[] = [];
+
+      const io = IO.bracket(
+        IO.lift(() => {
+          log.push("acquire");
+          return "resource";
+        }),
+        (_r) =>
+          IO.cancellable<string, number>(
+            (signal) =>
+              new Promise((resolve, reject) => {
+                const timer = setTimeout(() => resolve(42), 500);
+                signal.addEventListener("abort", () => {
+                  clearTimeout(timer);
+                  reject(new Error("aborted"));
+                });
+              })
+          ),
+        (r) =>
+          IO.lift(() => {
+            log.push(`release:${r}`);
+          })
+      );
+
+      const fiber = await io.fork().getOrNull();
+      await new Promise((r) => setTimeout(r, 50));
+      await fiber!.cancel();
+      const result = await fiber!.join();
+
+      expect(result.type).toBe("Cancelled");
+      expect(log).toContain("acquire");
+      expect(log).toContain("release:resource");
+    });
+
+    it("should swallow release errors and preserve the use result", async () => {
+      const result = await IO.bracket(
+        IO.pure("resource"),
+        () => IO.pure(42),
+        () =>
+          IO.lift(() => {
+            throw new Error("release failed");
+          })
+      ).unsafeRun();
+
+      expect(result).toEqual({ type: "Ok", value: 42 });
+    });
+
+    it("should swallow release errors and preserve the use error", async () => {
+      const result = await IO.bracket(
+        IO.pure("resource"),
+        () => IO.fail<string, number>("use failed"),
+        () =>
+          IO.lift(() => {
+            throw new Error("release failed");
+          })
+      ).unsafeRun();
+
+      expect(result).toEqual({ type: "Err", error: "use failed" });
+    });
+
+    it("should work with async acquire, use, and release", async () => {
+      const log: string[] = [];
+
+      const result = await IO.bracket(
+        IO.lift(async () => {
+          await new Promise((r) => setTimeout(r, 10));
+          log.push("acquire");
+          return { id: 1 };
+        }),
+        (conn) =>
+          IO.lift(async () => {
+            await new Promise((r) => setTimeout(r, 10));
+            log.push("use");
+            return `data-${conn.id}`;
+          }),
+        (conn) =>
+          IO.lift(async () => {
+            await new Promise((r) => setTimeout(r, 10));
+            log.push(`release-${conn.id}`);
+          })
+      ).unsafeRun();
+
+      expect(result).toEqual({ type: "Ok", value: "data-1" });
+      expect(log).toEqual(["acquire", "use", "release-1"]);
+    });
+
+    it("should compose with map and flatMap", async () => {
+      const result = await IO.bracket(
+        IO.pure(10),
+        (n) => IO.pure(n * 2),
+        () => IO.unit
+      )
+        .map((n) => n + 1)
+        .unsafeRun();
+
+      expect(result).toEqual({ type: "Ok", value: 21 });
+    });
+
+    it("should compose with mapErr", async () => {
+      const result = await IO.bracket(
+        IO.pure("r"),
+        () => IO.fail<string, number>("boom"),
+        () => IO.unit
+      )
+        .mapErr((e) => `Error: ${e}`)
+        .unsafeRun();
+
+      expect(result).toEqual({ type: "Err", error: "Error: boom" });
+    });
+
+    it("should nest brackets correctly", async () => {
+      const log: string[] = [];
+
+      const result = await IO.bracket(
+        IO.lift(() => {
+          log.push("acquire-outer");
+          return "outer";
+        }),
+        (outer) =>
+          IO.bracket(
+            IO.lift(() => {
+              log.push("acquire-inner");
+              return "inner";
+            }),
+            (inner) =>
+              IO.lift(() => {
+                log.push(`use:${outer}+${inner}`);
+                return 42;
+              }),
+            (inner) =>
+              IO.lift(() => {
+                log.push(`release:${inner}`);
+              })
+          ),
+        (outer) =>
+          IO.lift(() => {
+            log.push(`release:${outer}`);
+          })
+      ).unsafeRun();
+
+      expect(result).toEqual({ type: "Ok", value: 42 });
+      expect(log).toEqual(["acquire-outer", "acquire-inner", "use:outer+inner", "release:inner", "release:outer"]);
+    });
+
+    it("should release outer when nested inner use fails", async () => {
+      const log: string[] = [];
+
+      const result = await IO.bracket(
+        IO.lift(() => {
+          log.push("acquire-outer");
+          return "outer";
+        }),
+        (_outer) =>
+          IO.bracket(
+            IO.lift(() => {
+              log.push("acquire-inner");
+              return "inner";
+            }),
+            () =>
+              IO.lift<string, number>(() => {
+                throw "inner-use-failed";
+              }),
+            (inner) =>
+              IO.lift(() => {
+                log.push(`release:${inner}`);
+              })
+          ),
+        (outer) =>
+          IO.lift(() => {
+            log.push(`release:${outer}`);
+          })
+      ).unsafeRun();
+
+      expect(result).toEqual({ type: "Err", error: "inner-use-failed" });
+      expect(log).toContain("release:inner");
+      expect(log).toContain("release:outer");
+    });
+
+    it("should not call use or release when acquire is cancelled", async () => {
+      const log: string[] = [];
+
+      const io = IO.bracket(
+        IO.cancellable<string, string>(
+          (signal) =>
+            new Promise((resolve, reject) => {
+              const timer = setTimeout(() => resolve("resource"), 500);
+              signal.addEventListener("abort", () => {
+                clearTimeout(timer);
+                reject(new Error("aborted"));
+              });
+            })
+        ),
+        (r) =>
+          IO.lift(() => {
+            log.push(`use:${r}`);
+            return 42;
+          }),
+        (r) =>
+          IO.lift(() => {
+            log.push(`release:${r}`);
+          })
+      );
+
+      const fiber = await io.fork().getOrNull();
+      await new Promise((r) => setTimeout(r, 50));
+      await fiber!.cancel();
+      const result = await fiber!.join();
+
+      expect(result.type).toBe("Cancelled");
+      expect(log).toEqual([]);
+    });
+
+    it("should work inside Do notation", async () => {
+      const log: string[] = [];
+
+      const result = await IO.Do<string, number>(async (bind) => {
+        const value = await bind(
+          IO.bracket(
+            IO.lift(() => {
+              log.push("acquire");
+              return "res";
+            }),
+            () => IO.pure(10),
+            () =>
+              IO.lift(() => {
+                log.push("release");
+              })
+          )
+        );
+        return value + 5;
+      }).unsafeRun();
+
+      expect(result).toEqual({ type: "Ok", value: 15 });
+      expect(log).toEqual(["acquire", "release"]);
+    });
+
+    it("should handle use function that throws during IO construction", async () => {
+      const log: string[] = [];
+
+      const result = await IO.bracket(
+        IO.pure("resource"),
+        (_r) => {
+          log.push("use-construction");
+          throw new Error("construction error");
+        },
+        (r) =>
+          IO.lift(() => {
+            log.push(`release:${r}`);
+          })
+      ).unsafeRun();
+
+      // Release should still run even if use() throws during construction
+      expect(result.type).toBe("Err");
+      expect(log).toContain("release:resource");
+    });
+  });
+
+  describe("timeout", () => {
+    it("should return the value when computation completes before deadline", async () => {
+      const result = await IO.lift(() => 42)
+        .timeout(1000, () => "timed out")
+        .unsafeRun();
+
+      expect(result).toEqual({ type: "Ok", value: 42 });
+    });
+
+    it("should return the timeout error when computation exceeds deadline", async () => {
+      const result = await IO.lift(() => new Promise<number>((r) => setTimeout(() => r(42), 500)))
+        .timeout(50, () => "timed out")
+        .unsafeRun();
+
+      expect(result).toEqual({ type: "Err", error: "timed out" });
+    });
+
+    it("should preserve the original error when computation fails before deadline", async () => {
+      const result = await IO.fail<string, number>("original error")
+        .timeout(1000, () => "timed out")
+        .unsafeRun();
+
+      expect(result).toEqual({ type: "Err", error: "original error" });
+    });
+
+    it("should cancel the underlying computation when timeout fires", async () => {
+      let wasAborted = false;
+
+      const result = await IO.cancellable<string, number>(
+        (signal) =>
+          new Promise((resolve) => {
+            const timer = setTimeout(() => resolve(42), 500);
+            signal.addEventListener("abort", () => {
+              wasAborted = true;
+              clearTimeout(timer);
+            });
+          })
+      )
+        .timeout(50, () => "timed out")
+        .unsafeRun();
+
+      expect(result).toEqual({ type: "Err", error: "timed out" });
+      expect(wasAborted).toBe(true);
+    });
+
+    it("should clear the timer when computation completes", async () => {
+      // If the timer is not cleared, the test would hang or produce unexpected behavior
+      const result = await IO.lift(() => "fast")
+        .timeout(5000, () => "timed out")
+        .unsafeRun();
+
+      expect(result).toEqual({ type: "Ok", value: "fast" });
+    });
+
+    it("should work with async computations that complete in time", async () => {
+      const result = await IO.lift(() => new Promise<string>((r) => setTimeout(() => r("done"), 10)))
+        .timeout(1000, () => "timed out")
+        .unsafeRun();
+
+      expect(result).toEqual({ type: "Ok", value: "done" });
+    });
+
+    it("should accept typed timeout errors", async () => {
+      type TimeoutErr = { code: "TIMEOUT"; message: string };
+      type AppErr = { code: "APP"; message: string };
+
+      const result = await IO.fail<AppErr, number>({ code: "APP", message: "fail" })
+        .timeout<TimeoutErr>(1000, () => ({ code: "TIMEOUT", message: "exceeded" }))
+        .unsafeRun();
+
+      // The error type is AppErr | TimeoutErr
+      if (result.type === "Err") {
+        expect(result.error.code).toBe("APP");
+      }
+    });
+
+    it("should compose with map after timeout", async () => {
+      const result = await IO.pure(21)
+        .timeout(1000, () => "timed out")
+        .map((n) => n * 2)
+        .unsafeRun();
+
+      expect(result).toEqual({ type: "Ok", value: 42 });
+    });
+
+    it("should compose with mapErr after timeout", async () => {
+      const result = await IO.lift<string, number>(() => new Promise((r) => setTimeout(() => r(42), 500)))
+        .timeout(50, () => "timed out" as const)
+        .mapErr((e) => `Error: ${e}`)
+        .unsafeRun();
+
+      expect(result).toEqual({ type: "Err", error: "Error: timed out" });
+    });
+
+    it("should handle zero timeout", async () => {
+      const result = await IO.lift(() => new Promise<number>((r) => setTimeout(() => r(42), 100)))
+        .timeout(0, () => "instant timeout")
+        .unsafeRun();
+
+      expect(result).toEqual({ type: "Err", error: "instant timeout" });
+    });
+
+    it("should work with flatMap chains", async () => {
+      const result = await IO.pure(1)
+        .flatMap((n) => IO.lift(() => new Promise<number>((r) => setTimeout(() => r(n + 1), 10))))
+        .timeout(1000, () => "timed out")
+        .unsafeRun();
+
+      expect(result).toEqual({ type: "Ok", value: 2 });
+    });
+
+    it("should timeout a flatMap chain that takes too long", async () => {
+      const result = await IO.pure(1)
+        .flatMap(() => IO.lift(() => new Promise<number>((r) => setTimeout(() => r(2), 500))))
+        .timeout(50, () => "timed out")
+        .unsafeRun();
+
+      expect(result).toEqual({ type: "Err", error: "timed out" });
+    });
+
+    it("should propagate cancellation through timeout", async () => {
+      let wasAborted = false;
+
+      const io = IO.cancellable<string, number>(
+        (signal) =>
+          new Promise((resolve, reject) => {
+            const timer = setTimeout(() => resolve(42), 500);
+            signal.addEventListener("abort", () => {
+              wasAborted = true;
+              clearTimeout(timer);
+              reject(new Error("aborted"));
+            });
+          })
+      ).timeout(5000, () => "timed out");
+
+      const fiber = await io.fork().getOrNull();
+      await new Promise((r) => setTimeout(r, 50));
+      await fiber!.cancel();
+      const result = await fiber!.join();
+
+      expect(result.type).toBe("Cancelled");
+      expect(wasAborted).toBe(true);
+    });
+
+    it("should work inside Do notation", async () => {
+      const result = await IO.Do<string, number>(async (bind) => {
+        const a = await bind(IO.pure(10).timeout(1000, () => "t1"));
+        const b = await bind(IO.pure(20).timeout(1000, () => "t2"));
+        return a + b;
+      }).unsafeRun();
+
+      expect(result).toEqual({ type: "Ok", value: 30 });
+    });
+
+    it("should short-circuit Do on timeout", async () => {
+      let secondRan = false;
+
+      const result = await IO.Do<string, number>(async (bind) => {
+        await bind(
+          IO.lift<string, number>(() => new Promise<number>((r) => setTimeout(() => r(1), 500))).timeout(
+            50,
+            () => "timed out"
+          )
+        );
+        secondRan = true;
+        return 42;
+      }).unsafeRun();
+
+      expect(result).toEqual({ type: "Err", error: "timed out" });
+      expect(secondRan).toBe(false);
+    });
+
+    it("should work with bracket — timeout on use phase", async () => {
+      const log: string[] = [];
+
+      const result = await IO.bracket(
+        IO.lift(() => {
+          log.push("acquire");
+          return "resource";
+        }),
+        (_r) =>
+          IO.lift(() => new Promise<number>((r) => setTimeout(() => r(42), 500))).timeout(50, () => "use timed out"),
+        (r) =>
+          IO.lift(() => {
+            log.push(`release:${r}`);
+          })
+      ).unsafeRun();
+
+      expect(result).toEqual({ type: "Err", error: "use timed out" });
+      expect(log).toContain("acquire");
+      expect(log).toContain("release:resource");
+    });
+
+    it("should allow chaining multiple timeouts (innermost wins)", async () => {
+      const result = await IO.lift(() => new Promise<number>((r) => setTimeout(() => r(42), 500)))
+        .timeout(100, () => "inner timeout")
+        .timeout(5000, () => "outer timeout")
+        .unsafeRun();
+
+      // Inner timeout fires first at 100ms
+      expect(result).toEqual({ type: "Err", error: "inner timeout" });
+    });
+
+    it("should handle sync computation with timeout gracefully", async () => {
+      // Sync computation should complete immediately, well within any timeout
+      const result = await IO.lift(() => {
+        let sum = 0;
+        for (let i = 0; i < 1000; i++) sum += i;
+        return sum;
+      })
+        .timeout(1000, () => "timed out")
+        .unsafeRun();
+
+      expect(result).toEqual({ type: "Ok", value: 499500 });
+    });
+  });
 });

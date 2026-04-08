@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, test } from "@jest/globals";
-import { Err, IO, Ok, Policy, PolicyValidationError, RetryError, Schedule } from "../src";
+import { Err, IO, Ok, Policy, PolicyValidationError, RetryError, Schedule, CancellationError } from "../src";
 
 describe("Schedule", () => {
   describe("constructor", () => {
@@ -322,6 +322,139 @@ describe("Schedule", () => {
 
       const error = result as Err<BusinessError>;
       expect(error.error.message).toBe("Operation was cancelled");
+    });
+  });
+
+  describe("policy validation (NaN / invalid values)", () => {
+    it("should reject NaN recurs", () => {
+      expect(() => new Schedule({ recurs: NaN, factor: 1, delay: 0 })).toThrow(PolicyValidationError);
+    });
+
+    it("should reject NaN factor", () => {
+      expect(() => new Schedule({ recurs: 1, factor: NaN, delay: 0 })).toThrow(PolicyValidationError);
+    });
+
+    it("should reject NaN delay", () => {
+      expect(() => new Schedule({ recurs: 1, factor: 1, delay: NaN })).toThrow(PolicyValidationError);
+    });
+
+    it("should reject NaN timeout", () => {
+      expect(() => new Schedule({ recurs: 1, factor: 1, delay: 0, timeout: NaN })).toThrow(PolicyValidationError);
+    });
+
+    it("should reject NaN jitter", () => {
+      expect(() => new Schedule({ recurs: 1, factor: 1, delay: 0, jitter: NaN })).toThrow(PolicyValidationError);
+    });
+
+    it("should accept Infinity recurs for unbounded repeat/retry", () => {
+      const schedule = new Schedule({ recurs: Infinity, factor: 1, delay: 0 });
+      expect(schedule).not.toBe(null);
+    });
+  });
+
+  describe("retryIf (cancellation during delay)", () => {
+    it("should not deadlock when cancelled during retry delay", async () => {
+      const schedule = new Schedule({ recurs: 10, factor: 1, delay: 500 });
+      let attempt = 0;
+
+      const eff = IO.lift<Error, number>(() => {
+        attempt++;
+        throw new Error("always fails");
+      });
+
+      const operation = schedule.retryIf(
+        eff,
+        () => true,
+        (e) => e
+      );
+
+      // Cancel after first attempt completes but during the delay before second attempt
+      setTimeout(() => schedule.cancel(), 50);
+
+      const result = await operation.unsafeRun();
+
+      expect(result.type).toBe("Err");
+      expect((result as Err<Error>).error).toBeInstanceOf(CancellationError);
+      expect(attempt).toBe(1);
+    }, 2000);
+
+    it("should handle condition function that throws", async () => {
+      const schedule = new Schedule({ recurs: 3, factor: 1, delay: 0 });
+
+      const eff = IO.lift<Error, number>(() => {
+        throw new Error("op failed");
+      });
+
+      const result = await schedule
+        .retryIf(
+          eff,
+          () => {
+            throw new Error("condition exploded");
+          },
+          (e) => e
+        )
+        .unsafeRun();
+
+      expect(result.type).toBe("Err");
+      expect((result as Err<Error>).error.message).toContain("condition exploded");
+    });
+  });
+
+  describe("repeat (fixes)", () => {
+    it("should apply exponential backoff with policy.factor", async () => {
+      const schedule = new Schedule({ recurs: 3, factor: 2, delay: 100 });
+      let counter = 0;
+
+      const eff = IO.lift<Error, number>(() => {
+        counter++;
+        return counter;
+      });
+
+      const start = Date.now();
+      const result = await schedule.repeat(eff, (e) => e).unsafeRun();
+      const elapsed = Date.now() - start;
+
+      expect(result.type).toBe("Ok");
+      expect((result as Ok<number>).value).toBe(3);
+      // With factor=2: first delay=100ms, second delay=200ms, total >= 300ms
+      // Allow some tolerance for timing
+      expect(elapsed).toBeGreaterThanOrEqual(250);
+    }, 5000);
+
+    it("should handle null success value correctly", async () => {
+      const schedule = new Schedule({ recurs: 2, factor: 1, delay: 0 });
+
+      const eff = IO.lift<Error, null>(() => null);
+
+      const result = await schedule.repeat(eff, (e) => e).unsafeRun();
+
+      expect(result.type).toBe("Ok");
+      expect((result as Ok<null>).value).toBe(null);
+    });
+
+    it("should handle undefined success value correctly", async () => {
+      const schedule = new Schedule({ recurs: 2, factor: 1, delay: 0 });
+
+      const eff = IO.lift<Error, undefined>(() => undefined);
+
+      const result = await schedule.repeat(eff, (e) => e).unsafeRun();
+
+      expect(result.type).toBe("Ok");
+      expect((result as Ok<undefined>).value).toBe(undefined);
+    });
+
+    it("should handle void IO (IO.unit) with repeat", async () => {
+      const schedule = new Schedule({ recurs: 3, factor: 1, delay: 0 });
+      let counter = 0;
+
+      const eff = IO.lift<Error, void>(() => {
+        counter++;
+      });
+
+      const result = await schedule.repeat(eff, (e) => e).unsafeRun();
+
+      expect(result.type).toBe("Ok");
+      expect(counter).toBe(3);
     });
   });
 });

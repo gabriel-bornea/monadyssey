@@ -95,7 +95,6 @@ async function interpret<E, A>(root: Node<E, A>, signal?: AbortSignal): Promise<
   let cur: Node<any, any> = root;
 
   while (true) {
-    // ── Cancellation check ──────────────────────────────────────────
     if (signal?.aborted) {
       const finalizers: Array<() => void | Promise<void>> = [];
       while (stack.length > 0) {
@@ -198,20 +197,18 @@ async function interpret<E, A>(root: Node<E, A>, signal?: AbortSignal): Promise<
               // Side-effect failure is swallowed — tap preserves the original value
             }
             break;
-          case "Ensure":
-            {
-              const val = cur.value;
-              try {
-                if (!frame.predicate(val)) {
-                  cur = { tag: "Fail", error: frame.liftE(val) };
-                }
-              } catch {
-                // Predicate threw — treat as predicate failure to preserve typed error
+          case "Ensure": {
+            const val = cur.value;
+            try {
+              if (!frame.predicate(val)) {
                 cur = { tag: "Fail", error: frame.liftE(val) };
               }
-              break;
+            } catch {
+              // Predicate threw — treat as predicate failure to preserve typed error
+              cur = { tag: "Fail", error: frame.liftE(val) };
             }
             break;
+          }
           case "FoldM":
             try {
               cur = frame.onOk(cur.value)[NODE];
@@ -357,6 +354,92 @@ export class IO<E, A> {
    */
   static cancellable<E, A>(f: (signal: AbortSignal) => A | Promise<A>, liftE?: (e: unknown) => E): IO<E, A> {
     return new IO({ tag: "Lift", run: (signal?: AbortSignal) => f(signal ?? new AbortController().signal), liftE });
+  }
+
+  /**
+   * Guarantees resource cleanup by structuring effectful code into three phases:
+   * **acquire**, **use**, and **release**. The release action is *always* executed,
+   * regardless of whether `use` succeeds, fails, or is cancelled.
+   *
+   * This is the classic functional `bracket` pattern (Cats `bracket`, Haskell `bracket`,
+   * ZIO `acquireRelease`). It eliminates resource leaks by construction — the type
+   * system ensures that every acquired resource has a corresponding release.
+   *
+   * Semantics:
+   * - If **acquire** fails or is cancelled, `use` and `release` are never called.
+   * - If **use** succeeds, `release` runs and the success value is returned.
+   * - If **use** fails, `release` runs and the original error is returned.
+   * - If **use** is cancelled, `release` runs and `Cancelled` is propagated.
+   * - **release** runs without an `AbortSignal` — it always runs to completion.
+   * - If `release` itself fails, the error is swallowed and `use`'s result takes priority
+   *   (following Cats Effect semantics).
+   *
+   * @template E The error type shared by acquire and use.
+   * @template R The resource type produced by acquire.
+   * @template A The success type produced by use.
+   * @param {IO<E, R>} acquire An IO that acquires the resource.
+   * @param {(r: R) => IO<E, A>} use A function that uses the resource and produces a result.
+   * @param {(r: R) => IO<never, void>} release A function that releases the resource. Must not fail.
+   * @returns {IO<E, A>} An IO that acquires, uses, and releases the resource.
+   *
+   * @example
+   * // Database connection with guaranteed cleanup
+   * const io = IO.bracket(
+   *   IO.lift(() => openConnection()),
+   *   (conn) => IO.lift(() => conn.query('SELECT * FROM users')),
+   *   (conn) => IO.lift(() => conn.close())
+   * );
+   *
+   * @example
+   * // File handle with guaranteed close
+   * const io = IO.bracket(
+   *   IO.lift(() => fs.open('/tmp/data.txt', 'r')),
+   *   (fd) => IO.lift(() => fs.read(fd, buffer, 0, 1024, 0)),
+   *   (fd) => IO.lift(() => fs.close(fd))
+   * );
+   *
+   * @example
+   * // Composable with other IO combinators
+   * const io = IO.bracket(
+   *   acquirePool(),
+   *   (pool) => queryUsers(pool).map(users => users.filter(u => u.active)),
+   *   (pool) => IO.lift(() => pool.shutdown())
+   * ).mapErr(e => new AppError(e));
+   */
+  static bracket<E, R, A>(acquire: IO<E, R>, use: (r: R) => IO<E, A>, release: (r: R) => IO<never, void>): IO<E, A> {
+    return IO.lift<E, A>(
+      async (signal?: AbortSignal) => {
+        // Phase 1: Acquire — respects cancellation
+        const acqResult = await interpret(acquire[NODE], signal);
+        if (acqResult.type === "Cancelled") ioCancelled();
+        if (acqResult.type === "Err") throw ioEscape(acqResult.error);
+
+        const resource = acqResult.value;
+
+        // Phase 2: Use — respects cancellation, but release is guaranteed after
+        let useResult: Ok<A> | Err<E> | Cancelled;
+        try {
+          useResult = await interpret(use(resource)[NODE], signal);
+        } catch (e) {
+          // use() threw during IO construction — still release
+          await interpret(release(resource)[NODE]).catch(() => {});
+          throw e;
+        }
+
+        // Phase 3: Release — always runs, no signal (must complete), errors swallowed
+        await interpret(release(resource)[NODE]).catch(() => {});
+
+        // Propagate use's original outcome
+        if (useResult.type === "Cancelled") ioCancelled();
+        if (useResult.type === "Err") throw ioEscape(useResult.error);
+        return useResult.value;
+      },
+      (e: unknown) => {
+        if (isIOCancelled(e)) throw e;
+        if (isIOEscape(e)) return e.error as E;
+        return e as E;
+      }
+    );
   }
 
   /**
@@ -733,6 +816,102 @@ export class IO<E, A> {
   }
 
   /**
+   * Applies a timeout to this IO. If the computation does not complete within `ms`
+   * milliseconds, it is cancelled and the error produced by `onTimeout` is returned
+   * in the error channel. If the computation completes before the deadline, the
+   * timeout timer is cleared and the result is returned normally.
+   *
+   * The timeout error type `F` is unioned with the original error type `E`,
+   * so the caller must handle both. The underlying computation is cooperatively
+   * cancelled via `AbortSignal` when the timeout fires.
+   *
+   * This is a first-class replacement for the verbose `IO.race` workaround:
+   * ```typescript
+   * // Before — manual race
+   * IO.race(
+   *   operation,
+   *   IO.lift(async () => { await delay(5000); throw new TimeoutError(); })
+   * )
+   *
+   * // After — first-class combinator
+   * operation.timeout(5000, () => new TimeoutError('Exceeded 5s'))
+   * ```
+   *
+   * @template F The timeout error type.
+   * @param {number} ms The timeout duration in milliseconds.
+   * @param {() => F} onTimeout A thunk that produces the timeout error value.
+   * @returns {IO<E | F, A>} A new IO that fails with `F` if the timeout elapses.
+   *
+   * @example
+   * const io = IO.lift(() => fetch('/api/slow'))
+   *   .timeout(5000, () => new TimeoutError('Request exceeded 5s'));
+   *
+   * @example
+   * // Composable with mapErr to unify error types
+   * const io = fetchUser(id)
+   *   .timeout(3000, () => ({ code: 'TIMEOUT', message: 'User fetch timed out' }))
+   *   .mapErr(e => normalizeError(e));
+   */
+  timeout<F>(ms: number, onTimeout: () => F): IO<E | F, A> {
+    const node = this[NODE];
+    return IO.lift<E | F, A>(
+      (signal?: AbortSignal) => {
+        return new Promise<A>((resolve, reject) => {
+          const controller = new AbortController();
+
+          // Link parent signal — clean up listener when settled
+          let unlinkParent: (() => void) | undefined;
+          if (signal) {
+            if (signal.aborted) {
+              controller.abort();
+            } else {
+              const onAbort = () => controller.abort();
+              signal.addEventListener("abort", onAbort, { once: true });
+              unlinkParent = () => signal.removeEventListener("abort", onAbort);
+            }
+          }
+
+          let settled = false;
+          const settle = () => {
+            settled = true;
+            if (unlinkParent) unlinkParent();
+          };
+
+          const timer = setTimeout(() => {
+            if (settled) return;
+            settle();
+            controller.abort(); // cancel the underlying IO
+            reject(ioEscape(onTimeout()));
+          }, ms);
+
+          interpret(node, controller.signal).then((result) => {
+            if (settled) return;
+            settle();
+            clearTimeout(timer);
+            if (result.type === "Ok") resolve(result.value);
+            else if (result.type === "Cancelled") reject({ [IO_CANCELLED]: true });
+            else reject(ioEscape(result.error));
+          });
+
+          // Clear timer on cancellation to avoid retaining the closure
+          controller.signal.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+            },
+            { once: true }
+          );
+        });
+      },
+      (e: unknown) => {
+        if (isIOCancelled(e)) throw e;
+        if (isIOEscape(e)) return e.error as E | F;
+        return e as E | F;
+      }
+    );
+  }
+
+  /**
    * Starts this IO as a background computation, returning a `Fiber` handle.
    * The fiber can be joined (await result) or cancelled.
    *
@@ -878,40 +1057,62 @@ export class IO<E, A> {
       (signal?: AbortSignal) => {
         return new Promise<A>((resolve, reject) => {
           const controller = new AbortController();
-          // Link parent signal if present
+
+          // Link parent signal — clean up listener when settled
+          let unlinkParent: (() => void) | undefined;
           if (signal) {
             if (signal.aborted) {
               controller.abort();
             } else {
-              signal.addEventListener("abort", () => controller.abort(), { once: true });
+              const onAbort = () => controller.abort();
+              signal.addEventListener("abort", onAbort, { once: true });
+              unlinkParent = () => signal.removeEventListener("abort", onAbort);
             }
           }
 
           let completed = 0;
           let settled = false;
-          const errors: E[] = [];
+          const errors: (E | undefined)[] = new Array(ops.length);
+
+          const settle = () => {
+            settled = true;
+            if (unlinkParent) unlinkParent();
+          };
 
           ops.forEach((io, index) => {
             interpret(io[NODE], controller.signal).then((result) => {
               if (settled) return;
               if (result.type === "Ok") {
-                settled = true;
+                settle();
                 controller.abort(); // Cancel losers
                 resolve(result.value);
               } else if (result.type === "Err") {
                 errors[index] = result.error;
                 completed++;
                 if (completed === ops.length) {
-                  settled = true;
-                  reject(ioEscape(NonEmptyList.fromArray(errors)));
+                  settle();
+                  // Filter out undefined holes from cancelled entries
+                  const realErrors = errors.filter((e): e is E => e !== undefined);
+                  if (realErrors.length > 0) {
+                    reject(ioEscape(NonEmptyList.fromArray(realErrors)));
+                  } else {
+                    // All completed but no real errors (shouldn't happen), propagate cancellation
+                    reject({ [IO_CANCELLED]: true });
+                  }
                 }
               } else {
-                // Cancelled — don't count, don't resolve
+                // Cancelled
                 completed++;
                 if (completed === ops.length && !settled) {
-                  settled = true;
-                  // All cancelled — treat as cancellation propagation
-                  reject(ioEscape(NonEmptyList.fromArray(errors.length > 0 ? errors : ["Cancelled" as unknown as E])));
+                  settle();
+                  // Filter out undefined holes from cancelled entries
+                  const realErrors = errors.filter((e): e is E => e !== undefined);
+                  if (realErrors.length > 0) {
+                    reject(ioEscape(NonEmptyList.fromArray(realErrors)));
+                  } else {
+                    // All cancelled — propagate cancellation, not a fake error
+                    reject({ [IO_CANCELLED]: true });
+                  }
                 }
               }
             });
@@ -919,6 +1120,7 @@ export class IO<E, A> {
         });
       },
       (e: unknown) => {
+        if (isIOCancelled(e)) throw e;
         if (isIOEscape(e)) return e.error as NonEmptyList<E>;
         return NonEmptyList.fromArray([e as E]);
       }

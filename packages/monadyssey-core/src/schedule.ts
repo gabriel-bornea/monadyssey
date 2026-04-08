@@ -68,20 +68,20 @@ export class Schedule {
    * @param {Policy} policy - The scheduling policy to use for retries.
    */
   constructor(policy: Policy = defaultPolicy()) {
-    if (policy.recurs < 1) {
-      throw new PolicyValidationError("Policy validation error: 'recurs' must be at least 1");
+    if (policy.recurs !== Infinity && (!Number.isFinite(policy.recurs) || policy.recurs < 1)) {
+      throw new PolicyValidationError("Policy validation error: 'recurs' must be a positive number >= 1 (or Infinity)");
     }
-    if (policy.factor < 1) {
-      throw new PolicyValidationError("Policy validation error: 'factor' must be greater than or equal to 1");
+    if (!Number.isFinite(policy.factor) || policy.factor < 1) {
+      throw new PolicyValidationError("Policy validation error: 'factor' must be a finite number >= 1");
     }
-    if (policy.delay < 0) {
-      throw new PolicyValidationError("Policy validation error: 'delay' must not be negative");
+    if (!Number.isFinite(policy.delay) || policy.delay < 0) {
+      throw new PolicyValidationError("Policy validation error: 'delay' must be a finite non-negative number");
     }
-    if (policy.timeout !== undefined && policy.timeout < 0) {
-      throw new PolicyValidationError("Policy validation error: 'timeout' must not be negative");
+    if (policy.timeout !== undefined && (!Number.isFinite(policy.timeout) || policy.timeout < 0)) {
+      throw new PolicyValidationError("Policy validation error: 'timeout' must be a finite non-negative number");
     }
-    if (policy.jitter !== undefined && (policy.jitter < 0 || policy.jitter > 1)) {
-      throw new PolicyValidationError("Policy validation error: 'jitter' must be between 0 and 1");
+    if (policy.jitter !== undefined && (!Number.isFinite(policy.jitter) || policy.jitter < 0 || policy.jitter > 1)) {
+      throw new PolicyValidationError("Policy validation error: 'jitter' must be a finite number between 0 and 1");
     }
     this.policy = policy;
   }
@@ -124,17 +124,31 @@ export class Schedule {
           return result.value;
         }
         const error = result.error;
-        if (!condition(error)) {
+
+        let shouldRetry: boolean;
+        try {
+          shouldRetry = condition(error);
+        } catch (conditionError) {
+          return Promise.reject(
+            liftE(
+              new ConditionalRetryError(
+                `Retry condition threw: ${conditionError instanceof Error ? conditionError.message : String(conditionError)}`
+              )
+            )
+          );
+        }
+
+        if (!shouldRetry) {
           return Promise.reject(liftE(new ConditionalRetryError(`Retry condition not met: ${error}`)));
         }
         if (attempt >= policy.recurs - 1) {
           return Promise.reject(liftE(new RetryError(`Retry limit reached without success: ${error}`)));
         }
-        await new Promise((resolve) => {
+        await new Promise<void>((resolve, reject) => {
           timeoutId = setTimeout(resolve, this.applyJitter(delay));
           if (this.cancelled) {
             clearTimeout(timeoutId);
-            return Promise.reject(liftE(new CancellationError("Operation was cancelled")));
+            reject(liftE(new CancellationError("Operation was cancelled")));
           }
         });
         delay *= policy.factor;
@@ -163,10 +177,12 @@ export class Schedule {
    */
   repeat<E, A>(eff: IO<E, A>, liftE: (error: Error) => E): IO<E, A> {
     const policy = this.policy;
-    let timeoutId: NodeJS.Timeout | null = null;
 
     return IO.lift(async () => {
-      let lastSuccessResult: A | null = null;
+      let timeoutId: NodeJS.Timeout | null = null;
+      let hasResult = false;
+      let lastSuccessResult: A | undefined;
+      let delay = policy.delay;
 
       for (let attempt = 0; attempt < policy.recurs; attempt++) {
         if (this.cancelled) {
@@ -179,17 +195,19 @@ export class Schedule {
         const result = await this.withTimeout(eff, liftE).unsafeRun();
 
         if (result.type === "Ok") {
+          hasResult = true;
           lastSuccessResult = result.value;
 
           if (attempt < policy.recurs - 1) {
-            await new Promise((resolve) => (timeoutId = setTimeout(resolve, this.applyJitter(policy.delay))));
+            await new Promise<void>((resolve) => (timeoutId = setTimeout(resolve, this.applyJitter(delay))));
+            delay *= policy.factor;
           }
         } else {
           return Promise.reject(liftE(new RepeatError(`Failed to execute repeat: ${result.error}`)));
         }
       }
 
-      if (lastSuccessResult !== null && lastSuccessResult !== undefined) {
+      if (hasResult) {
         return lastSuccessResult as A;
       }
 
@@ -222,14 +240,20 @@ export class Schedule {
 
     return IO.lift<E, A>(async () => {
       let timeoutId: NodeJS.Timeout | null = null;
+      let settled = false;
 
       const timeoutP = new Promise<A>((_, reject) => {
         timeoutId = setTimeout(() => {
+          if (settled) return;
+          settled = true;
           reject(liftE(new TimeoutError(`The operation timed out after ${timeout} milliseconds`)));
         }, timeout);
       });
 
       const opP = eff.unsafeRun().then((result) => {
+        if (settled) return result.type === "Ok" ? result.value : Promise.reject(result.error);
+        settled = true;
+        if (timeoutId) clearTimeout(timeoutId);
         switch (result.type) {
           case "Ok":
             return result.value;
@@ -239,9 +263,7 @@ export class Schedule {
       });
 
       try {
-        const result = await Promise.race([opP, timeoutP]);
-        if (timeoutId) clearTimeout(timeoutId);
-        return result;
+        return await Promise.race([opP, timeoutP]);
       } catch (error) {
         if (timeoutId) clearTimeout(timeoutId);
         return Promise.reject(error);

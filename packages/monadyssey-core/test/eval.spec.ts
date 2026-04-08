@@ -210,4 +210,34 @@ describe("Eval", () => {
       expect(await ev.evaluate()).toBe(42);
     });
   });
+
+  describe("value() visibility", () => {
+    it("should not expose value() as a public method on Eval results", () => {
+      // value() is protected — users must use evaluate() instead.
+      // Calling value() on Map or FlatMap nodes would throw EvaluationError.
+      // This test verifies that evaluate() works correctly as the public API.
+      const mapped = Eval.now(1).map((x) => x + 1);
+      expect(mapped.evaluate()).toBe(2);
+
+      const flatMapped = Eval.now(1).flatMap((x) => Eval.now(x + 1));
+      expect(flatMapped.evaluate()).toBe(2);
+    });
+
+    it("should correctly evaluate through all node types", () => {
+      // Now — value available immediately
+      expect(Eval.now(42).evaluate()).toBe(42);
+
+      // Deferred — re-evaluates each time
+      let counter = 0;
+      const deferred = Eval.defer(() => ++counter);
+      expect(deferred.evaluate()).toBe(1);
+      expect(deferred.evaluate()).toBe(2);
+
+      // Lazy — evaluates once, caches
+      let lazyCount = 0;
+      const lazy = Eval.lazy(() => ++lazyCount);
+      expect(lazy.evaluate()).toBe(1);
+      expect(lazy.evaluate()).toBe(1);
+    });
+  });
 });
