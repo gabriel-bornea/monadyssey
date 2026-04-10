@@ -1,6 +1,10 @@
 ![CI/CD](https://github.com/gabriel-bornea/monadyssey/actions/workflows/release.yml/badge.svg)
 [![Documentation](https://img.shields.io/badge/docs-online-brightgreen)](/docs)
 
+**This repository has moved.**
+- Development continues at [codeberg.org/open-stage/monadyssey](https://codeberg.org/open-stage/monadyssey).
+- This mirror is archived and no longer updated.
+
 ### Overview
 
 Monadyssey is a TypeScript library inspired by functional programming principles. It provides utilities for managing 
