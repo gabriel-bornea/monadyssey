@@ -2,7 +2,7 @@
 [![Documentation](https://img.shields.io/badge/docs-online-brightgreen)](/docs)
 
 **This repository has moved.**
-- Development continues at [codeberg.org/open-stage/monadyssey](https://codeberg.org/open-stage/monadyssey).
+- Development continues at [https://gitlab.com/open-stage/monadyssey](https://gitlab.com/open-stage/monadyssey).
 - This mirror is archived and no longer updated.
 
 ### Overview
